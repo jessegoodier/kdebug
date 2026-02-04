@@ -394,6 +394,44 @@ def wait_for_container_running(
     return False
 
 
+def check_pod_security_context(pod_name: str, namespace: str) -> Dict:
+    """Check the pod's security context to see if running as root is allowed."""
+    cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
+    output = run_command(cmd, check=False)
+
+    if not output:
+        return {"can_run_as_root": True, "reason": "Unable to check"}
+
+    try:
+        pod_data = json.loads(output)
+        spec = pod_data.get("spec", {})
+
+        # Check pod-level security context
+        pod_security_context = spec.get("securityContext", {})
+        run_as_non_root = pod_security_context.get("runAsNonRoot", False)
+
+        # Check if there's a runAsUser set at pod level
+        pod_run_as_user = pod_security_context.get("runAsUser")
+
+        # Check container-level security contexts
+        containers = spec.get("containers", [])
+        for container in containers:
+            container_security = container.get("securityContext", {})
+            container_run_as_non_root = container_security.get(
+                "runAsNonRoot", False)
+
+            if container_run_as_non_root or run_as_non_root:
+                return {
+                    "can_run_as_root": False,
+                    "reason": "Pod has runAsNonRoot policy enabled"
+                }
+
+        return {"can_run_as_root": True, "reason": "No restrictions found"}
+
+    except json.JSONDecodeError:
+        return {"can_run_as_root": True, "reason": "Unable to parse pod spec"}
+
+
 def launch_debug_container(
     pod_name: str,
     namespace: str,
@@ -405,6 +443,22 @@ def launch_debug_container(
     """Launch a debug container attached to the pod and return its name."""
     print(
         f"Launching debug container for pod {colorize(pod_name, Colors.CYAN)}...")
+
+    # Check if running as root is possible when requested
+    if as_root:
+        security_check = check_pod_security_context(pod_name, namespace)
+        if not security_check["can_run_as_root"]:
+            print(
+                f"{colorize('⚠ Warning:', Colors.YELLOW)} {security_check['reason']}",
+                file=sys.stderr
+            )
+            print(
+                f"{colorize('The --as-root flag will likely fail.', Colors.YELLOW)} Proceeding anyway...",
+                file=sys.stderr
+            )
+            print(
+                f"{colorize('Tip:', Colors.CYAN)} Try without --as-root flag\n"
+            )
 
     if existing_containers:
         print(
