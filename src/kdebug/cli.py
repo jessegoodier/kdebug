@@ -8,7 +8,7 @@ interactive shell access and backup capabilities.
 
 Usage Examples:
     # Interactive session with controller
-    ./kdebug.py -n kubecost --controller sts --controller-name aggregator --container aggregator --cmd bash
+    ./kdebug.py -n kubecost --controller sts/aggregator --container aggregator --cmd bash
 
     # Interactive session with direct pod
     ./kdebug.py -n kubecost --pod aggregator-0 --container aggregator
@@ -17,10 +17,11 @@ Usage Examples:
     ./kdebug.py -n kubecost --pod aggregator-0 --container aggregator --backup /var/configs
 
     # Using deployment
-    ./kdebug.py -n myapp --controller deployment --controller-name frontend --cmd sh
+    ./kdebug.py -n myapp --controller deploy/frontend --cmd sh
 """
 
 import argparse
+import importlib.resources
 import json
 import os
 import subprocess
@@ -455,18 +456,12 @@ def select_pod(args) -> Optional[Dict]:
 
     # Controller-based selection
     if args.controller:
-        if not args.controller_name:
-            print(
-                "Error: --controller-name is required when using --controller",
-                file=sys.stderr,
-            )
-            return None
-
-        pods = get_pods_by_controller(args.controller, args.controller_name, namespace)
+        controller_type, controller_name = args.controller
+        pods = get_pods_by_controller(controller_type, controller_name, namespace)
 
         if not pods:
             print(
-                f"No pods found for {args.controller} '{args.controller_name}'",
+                f"No pods found for {controller_type} '{controller_name}'",
                 file=sys.stderr,
             )
             return None
@@ -998,246 +993,43 @@ def cleanup_debug_container(
     return True
 
 
-def generate_bash_completion() -> str:
-    """Generate bash completion script."""
-    return """# kdebug bash completion
-# Source this file or add to ~/.bashrc:
-#   source <(kdebug --completions bash)
-# Or:
-#   source /path/to/completions/kdebug.bash
+def _output_completion_script(shell: str) -> None:
+    """Output the shell completion script and exit."""
+    files = {"bash": "kdebug.bash", "zsh": "_kdebug", "fish": "kdebug.fish"}
+    filename = files.get(shell)
+    if not filename:
+        print(f"Unknown shell: {shell}", file=sys.stderr)
+        sys.exit(1)
 
-_kdebug_get_contexts() {
-    kubectl config get-contexts -o name 2>/dev/null
-}
-
-_kdebug_get_namespaces() {
-    local kubectl_args=$(_kdebug_get_kubectl_args)
-    kubectl $kubectl_args get namespaces -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
-}
-
-_kdebug_get_pods() {
-    local ns="${1:-default}"
-    local kubectl_args=$(_kdebug_get_kubectl_args)
-    kubectl $kubectl_args get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
-}
-
-_kdebug_get_controllers() {
-    local ns="${1:-default}"
-    local controller_type="$2"
-    local kubectl_args=$(_kdebug_get_kubectl_args)
-    case "$controller_type" in
-        deployment|deploy)
-            kubectl $kubectl_args get deployments -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
-            ;;
-        statefulset|sts)
-            kubectl $kubectl_args get statefulsets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
-            ;;
-        daemonset|ds)
-            kubectl $kubectl_args get daemonsets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
-            ;;
-    esac
-}
-
-_kdebug_get_kubectl_args() {
-    local i args=""
-    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
-        case "${COMP_WORDS[i]}" in
-            --context)
-                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
-                    args="$args --context=${COMP_WORDS[$((i+1))]}"
-                fi
-                ;;
-            --context=*)
-                args="$args ${COMP_WORDS[i]}"
-                ;;
-            --kubeconfig)
-                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
-                    args="$args --kubeconfig=${COMP_WORDS[$((i+1))]}"
-                fi
-                ;;
-            --kubeconfig=*)
-                args="$args ${COMP_WORDS[i]}"
-                ;;
-        esac
-    done
-    echo "$args"
-}
-
-_kdebug_get_namespace_from_args() {
-    local i
-    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
-        case "${COMP_WORDS[i]}" in
-            -n|--namespace)
-                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
-                    echo "${COMP_WORDS[$((i+1))]}"
-                    return
-                fi
-                ;;
-            -n=*|--namespace=*)
-                echo "${COMP_WORDS[i]#*=}"
-                return
-                ;;
-        esac
-    done
-    local kubectl_args=$(_kdebug_get_kubectl_args)
-    kubectl $kubectl_args config view --minify -o jsonpath='{..namespace}' 2>/dev/null || echo "default"
-}
-
-_kdebug_get_controller_from_args() {
-    local i
-    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
-        case "${COMP_WORDS[i]}" in
-            --controller)
-                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
-                    echo "${COMP_WORDS[$((i+1))]}"
-                    return
-                fi
-                ;;
-            --controller=*)
-                echo "${COMP_WORDS[i]#*=}"
-                return
-                ;;
-        esac
-    done
-}
-
-_kdebug() {
-    local cur prev words cword
-    _init_completion || return
-
-    local opts="--pod --controller --controller-name -n --namespace --context --kubeconfig
-                --container --debug-image --cmd --cd-into --backup --compress --as-root
-                --debug --completions -V --version --help -h"
-
-    local controller_types="deployment deploy statefulset sts daemonset ds"
-
-    case "$prev" in
-        -n|--namespace)
-            COMPREPLY=($(compgen -W "$(_kdebug_get_namespaces)" -- "$cur"))
-            return
-            ;;
-        --context)
-            COMPREPLY=($(compgen -W "$(_kdebug_get_contexts)" -- "$cur"))
-            return
-            ;;
-        --kubeconfig)
-            _filedir
-            return
-            ;;
-        --pod)
-            local ns=$(_kdebug_get_namespace_from_args)
-            COMPREPLY=($(compgen -W "$(_kdebug_get_pods "$ns")" -- "$cur"))
-            return
-            ;;
-        --controller)
-            COMPREPLY=($(compgen -W "$controller_types" -- "$cur"))
-            return
-            ;;
-        --controller-name)
-            local ns=$(_kdebug_get_namespace_from_args)
-            local ct=$(_kdebug_get_controller_from_args)
-            if [[ -n "$ct" ]]; then
-                COMPREPLY=($(compgen -W "$(_kdebug_get_controllers "$ns" "$ct")" -- "$cur"))
-            fi
-            return
-            ;;
-        --container|--debug-image|--cmd|--cd-into|--backup)
-            # These take arbitrary values, no completion
-            return
-            ;;
-        --completions)
-            COMPREPLY=($(compgen -W "bash zsh" -- "$cur"))
-            return
-            ;;
-    esac
-
-    if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
-        return
-    fi
-}
-
-complete -F _kdebug kdebug
-"""
+    try:
+        completions_pkg = importlib.resources.files("kdebug.completions")
+        script = (completions_pkg / filename).read_text()
+        print(script)
+    except Exception as e:
+        print(f"Error reading completion script: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
-def generate_zsh_completion() -> str:
-    """Generate zsh completion script."""
-    return """#compdef kdebug
-# kdebug zsh completion
-# Install: kdebug --completions zsh > ~/.zsh/completions/_kdebug
-# Or: source <(kdebug --completions zsh)
+def parse_controller_arg(value: str) -> Tuple[str, str]:
+    """Parse --controller TYPE/NAME format and return (controller_type, controller_name).
 
-_kdebug_kubectl_args() {
-    local args=""
-    [[ -n "${opt_args[--context]}" ]] && args="$args --context=${opt_args[--context]}"
-    [[ -n "${opt_args[--kubeconfig]}" ]] && args="$args --kubeconfig=${opt_args[--kubeconfig]}"
-    echo "$args"
-}
-
-_kdebug_contexts() {
-    local -a contexts
-    contexts=(${(f)"$(kubectl config get-contexts -o name 2>/dev/null)"})
-    _describe 'context' contexts
-}
-
-_kdebug_namespaces() {
-    local kubectl_args=$(_kdebug_kubectl_args)
-    local -a namespaces
-    namespaces=(${(f)"$(kubectl $kubectl_args get namespaces -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
-    _describe 'namespace' namespaces
-}
-
-_kdebug_pods() {
-    local ns="${opt_args[-n]:-${opt_args[--namespace]:-default}}"
-    local kubectl_args=$(_kdebug_kubectl_args)
-    local -a pods
-    pods=(${(f)"$(kubectl $kubectl_args get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
-    _describe 'pod' pods
-}
-
-_kdebug_controller_names() {
-    local ns="${opt_args[-n]:-${opt_args[--namespace]:-default}}"
-    local ct="${opt_args[--controller]:-deployment}"
-    local kubectl_args=$(_kdebug_kubectl_args)
-    local resource
-    case "$ct" in
-        deployment|deploy) resource="deployments" ;;
-        statefulset|sts) resource="statefulsets" ;;
-        daemonset|ds) resource="daemonsets" ;;
-        *) resource="deployments" ;;
-    esac
-    local -a names
-    names=(${(f)"$(kubectl $kubectl_args get "$resource" -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
-    _describe 'controller name' names
-}
-
-_kdebug() {
-    local -a args
-    args=(
-        '(-V --version)'{-V,--version}'[Show version and exit]'
-        '(-h --help)'{-h,--help}'[Show help message]'
-        '--pod[Pod name for direct selection]:pod:_kdebug_pods'
-        '--controller[Controller type]:type:(deployment deploy statefulset sts daemonset ds)'
-        '--controller-name[Controller name]:name:_kdebug_controller_names'
-        '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace]:namespace:_kdebug_namespaces'
-        '--context[Kubernetes context to use]:context:_kdebug_contexts'
-        '--kubeconfig[Path to kubeconfig file]:path:_files'
-        '--container[Target container for process namespace sharing]:container:'
-        '--debug-image[Debug container image]:image:'
-        '--cmd[Command to run in debug container]:command:'
-        '--cd-into[Change to directory on start]:directory:_files -/'
-        '--backup[Copy path from pod to local backups]:path:'
-        '--compress[Compress backup as tar.gz]'
-        '--as-root[Run debug container as root]'
-        '--debug[Show kubectl commands being executed]'
-        '--completions[Output shell completion script]:shell:(bash zsh)'
-    )
-    _arguments -s $args
-}
-
-_kdebug "$@"
-"""
+    Raises argparse.ArgumentTypeError on invalid input.
+    """
+    if "/" not in value:
+        raise argparse.ArgumentTypeError(
+            f"Invalid format '{value}'. Expected TYPE/NAME (e.g. sts/myapp, deploy/frontend)."
+        )
+    controller_type, controller_name = value.split("/", 1)
+    if not controller_name:
+        raise argparse.ArgumentTypeError(
+            f"Missing controller name after '/'. Expected TYPE/NAME (e.g. sts/myapp)."
+        )
+    if controller_type.lower() not in CONTROLLER_ALIASES:
+        valid_types = ", ".join(sorted(CONTROLLER_ALIASES.keys()))
+        raise argparse.ArgumentTypeError(
+            f"Unknown controller type '{controller_type}'. Valid types: {valid_types}"
+        )
+    return (controller_type, controller_name)
 
 
 class KdebugHelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -1258,12 +1050,13 @@ def main():
 Usage:
   kdebug [options]                                  Interactive TUI mode
   kdebug --pod POD [options]                        Direct pod selection
-  kdebug --controller TYPE --controller-name NAME   Controller selection""",
+  kdebug --controller TYPE/NAME [options]            Controller selection""",
         formatter_class=KdebugHelpFormatter,
         epilog="""Examples:
   kdebug                                         # Interactive TUI
   kdebug -n prod --pod api-0                     # Direct pod
-  kdebug --controller sts --controller-name db   # StatefulSet pod
+  kdebug --controller sts/db                     # StatefulSet pod
+  kdebug --controller deploy/frontend --cmd sh   # Deployment pod
   kdebug --pod web-0 --backup /app/config        # Backup files""",
     )
 
@@ -1279,14 +1072,9 @@ Usage:
     )
     target_group.add_argument(
         "--controller",
-        choices=list(CONTROLLER_ALIASES.keys()),
-        metavar="TYPE",
-        help="Controller type: deployment, sts, ds (or full names)",
-    )
-    target_group.add_argument(
-        "--controller-name",
-        metavar="NAME",
-        help="Controller name (required with --controller)",
+        type=parse_controller_arg,
+        metavar="TYPE/NAME",
+        help="Controller as TYPE/NAME (e.g. sts/myapp, deploy/frontend)",
     )
 
     # Options arguments
@@ -1349,7 +1137,7 @@ Usage:
     )
     util_group.add_argument(
         "--completions",
-        choices=["bash", "zsh"],
+        choices=["bash", "zsh", "fish"],
         metavar="SHELL",
         help="Output shell completion script",
     )
@@ -1358,10 +1146,7 @@ Usage:
 
     # Handle --completions early
     if args.completions:
-        if args.completions == "bash":
-            print(generate_bash_completion())
-        else:
-            print(generate_zsh_completion())
+        _output_completion_script(args.completions)
         sys.exit(0)
 
     # Set debug mode and kubectl global options
@@ -1369,10 +1154,6 @@ Usage:
     global KUBECTL_CONTEXT, KUBECTL_KUBECONFIG
     KUBECTL_CONTEXT = args.context
     KUBECTL_KUBECONFIG = args.kubeconfig
-
-    # Validate arguments - allow interactive mode if no pod/controller specified
-    if args.controller and not args.controller_name:
-        parser.error("--controller-name is required when using --controller")
 
     # Select pod
     pod = select_pod(args)

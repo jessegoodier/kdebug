@@ -81,33 +81,15 @@ _kdebug_get_namespace_from_args() {
     kubectl $kubectl_args config view --minify -o jsonpath='{..namespace}' 2>/dev/null || echo "default"
 }
 
-_kdebug_get_controller_from_args() {
-    local i
-    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
-        case "${COMP_WORDS[i]}" in
-            --controller)
-                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
-                    echo "${COMP_WORDS[$((i+1))]}"
-                    return
-                fi
-                ;;
-            --controller=*)
-                echo "${COMP_WORDS[i]#*=}"
-                return
-                ;;
-        esac
-    done
-}
-
 _kdebug() {
     local cur prev words cword
     _init_completion || return
 
-    local opts="--pod --controller --controller-name -n --namespace --context --kubeconfig
+    local opts="--pod --controller -n --namespace --context --kubeconfig
                 --container --debug-image --cmd --cd-into --backup --compress --as-root
                 --debug --completions -V --version --help -h"
 
-    local controller_types="deployment deploy statefulset sts daemonset ds"
+    local controller_prefixes="deployment/ deploy/ statefulset/ sts/ daemonset/ ds/"
 
     case "$prev" in
         -n|--namespace)
@@ -128,14 +110,20 @@ _kdebug() {
             return
             ;;
         --controller)
-            COMPREPLY=($(compgen -W "$controller_types" -- "$cur"))
-            return
-            ;;
-        --controller-name)
-            local ns=$(_kdebug_get_namespace_from_args)
-            local ct=$(_kdebug_get_controller_from_args)
-            if [[ -n "$ct" ]]; then
-                COMPREPLY=($(compgen -W "$(_kdebug_get_controllers "$ns" "$ct")" -- "$cur"))
+            # Complete TYPE/NAME - if cur contains /, complete the name part
+            if [[ "$cur" == */* ]]; then
+                local ct="${cur%%/*}"
+                local ns=$(_kdebug_get_namespace_from_args)
+                local names=$(_kdebug_get_controllers "$ns" "$ct")
+                local completions=""
+                for name in $names; do
+                    completions="$completions ${ct}/${name}"
+                done
+                COMPREPLY=($(compgen -W "$completions" -- "$cur"))
+            else
+                COMPREPLY=($(compgen -W "$controller_prefixes" -- "$cur"))
+                # Don't add trailing space after type prefix
+                compopt -o nospace
             fi
             return
             ;;
@@ -144,7 +132,7 @@ _kdebug() {
             return
             ;;
         --completions)
-            COMPREPLY=($(compgen -W "bash zsh" -- "$cur"))
+            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
             return
             ;;
     esac
@@ -156,4 +144,3 @@ _kdebug() {
 }
 
 complete -F _kdebug kdebug
-
