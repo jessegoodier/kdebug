@@ -19,6 +19,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.new.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,4 +74,11 @@ jobs:
   update-homebrew:
     needs: release
     uses: ./.github/workflows/update-homebrew.yml
+    secrets: inherit
+
+  publish-pypi:
+    needs: release
+    uses: ./.github/workflows/pypi-publish.yml
+    with:
+      ref: v${{ needs.release.outputs.version }}
     secrets: inherit
