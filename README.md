@@ -2,8 +2,9 @@
 
 Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
 
-## Features
+Similar to kpf <https://github.com/jessegoodier/kpf>, this is a python wrapper around `kubectl debug` and `kubectl cp`.
 
+## Features
 
 - 🐚 **Interactive Shell Access** - Launch bash/zsh sessions in debug containers directly to the directory of your choice
 - 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression
