@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kdebug"
+version = "0.1.0"
+description = "Universal Kubernetes Debug Container Utility"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [{ name = "Jesse Goodier" }]
+keywords = ["kubernetes", "debug", "kubectl", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+]
+
+[project.scripts]
+kdebug = "kdebug.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jessegoodier/kdebug"
+Repository = "https://github.com/jessegoodier/kdebug"

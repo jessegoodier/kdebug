@@ -10,18 +10,28 @@ kdebug is a Python CLI tool for launching ephemeral debug containers in Kubernet
 
 ```
 kdebug/
-├── bin/kdebug           # Main Python script (single-file application)
+├── pyproject.toml           # Package metadata and build config (version source of truth)
+├── src/
+│   └── kdebug/
+│       ├── __init__.py      # Package init with __version__ from importlib.metadata
+│       └── cli.py           # Main CLI code
 ├── completions/
-│   ├── kdebug.bash      # Bash completion script (generated)
-│   └── _kdebug          # Zsh completion script (generated)
-├── README.md            # User documentation
-└── AGENTS.md            # This file
+│   ├── kdebug.bash          # Bash completion script (generated)
+│   └── _kdebug              # Zsh completion script (generated)
+├── README.md                # User documentation
+├── AGENTS.md                # This file
+└── .github/
+    └── workflows/
+        └── release.yml      # Release automation (updates pyproject.toml)
 ```
 
 ## Key Architecture
 
-- **Single-file design**: All code lives in `bin/kdebug` - no external dependencies beyond Python stdlib
-- **Completion scripts are generated**: The functions `generate_bash_completion()` and `generate_zsh_completion()` in `bin/kdebug` produce the completion files
+- **Python package**: Installable via `uv tool install kdebug` or `pip install .`
+- **Entry point**: `kdebug` command maps to `kdebug.cli:main`
+- **Version**: Single source of truth in `pyproject.toml`, accessed via `importlib.metadata`
+- **No external dependencies**: Uses Python stdlib only
+- **Completion scripts are generated**: The functions `generate_bash_completion()` and `generate_zsh_completion()` in `src/kdebug/cli.py` produce the completion files
 - **Global state pattern**: Module-level variables (`DEBUG_MODE`, `KUBECTL_CONTEXT`, `KUBECTL_KUBECONFIG`) are set after argument parsing
 
 ## Making Changes
@@ -48,8 +58,12 @@ cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o json"
 After modifying the completion generators:
 
 ```bash
-./bin/kdebug --completions bash > completions/kdebug.bash
-./bin/kdebug --completions zsh > completions/_kdebug
+# Install package in development mode first
+uv pip install -e .
+
+# Then regenerate completions
+kdebug --completions bash > completions/kdebug.bash
+kdebug --completions zsh > completions/_kdebug
 ```
 
 ## Testing
@@ -57,21 +71,27 @@ After modifying the completion generators:
 ### Manual testing
 
 ```bash
+# Install in development mode
+uv pip install -e .
+
 # Verify help output
-./bin/kdebug --help
+kdebug --help
+
+# Verify version
+kdebug --version
 
 # Test with debug mode to see kubectl commands
-./bin/kdebug --debug -n <namespace>
+kdebug --debug -n <namespace>
 
 # Test argument combinations
-./bin/kdebug --context <ctx> --kubeconfig <path> -n <ns> --pod <pod>
+kdebug --context <ctx> --kubeconfig <path> -n <ns> --pod <pod>
 ```
 
 ### Syntax checks
 
 ```bash
 # Python syntax
-python3 -m py_compile bin/kdebug
+python3 -m py_compile src/kdebug/cli.py
 
 # Bash completion syntax
 bash -n completions/kdebug.bash
@@ -84,11 +104,11 @@ zsh -n completions/_kdebug
 
 ```bash
 # Bash
-source <(./bin/kdebug --completions bash)
+source <(kdebug --completions bash)
 kdebug --<TAB>
 
 # Zsh
-source <(./bin/kdebug --completions zsh)
+source <(kdebug --completions zsh)
 kdebug --<TAB>
 ```
 
@@ -103,6 +123,19 @@ kdebug --<TAB>
 
 ## Dependencies
 
-- Python 3.6+
+- Python 3.8+ (for `importlib.metadata`)
 - kubectl (must be in PATH and configured)
 - No pip packages required
+
+## Installation
+
+```bash
+# Via uv (recommended)
+uv tool install kdebug
+
+# Via pip
+pip install .
+
+# Development mode
+uv pip install -e .
+```

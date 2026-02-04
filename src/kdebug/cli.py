@@ -31,7 +31,7 @@ import tty
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-VERSION = "0.1.0"
+from kdebug import __version__
 
 # Global debug flag
 DEBUG_MODE = False
@@ -1269,7 +1269,7 @@ Usage:
 
     # Version flag
     parser.add_argument(
-        "-V", "--version", action="version", version=f"%(prog)s {VERSION}"
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
     # Target selection arguments
