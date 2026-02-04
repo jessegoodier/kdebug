@@ -31,20 +31,41 @@ _kdebug_pods() {
     _describe 'pod' pods
 }
 
-_kdebug_controller_names() {
+_kdebug_controllers() {
     local ns="${opt_args[-n]:-${opt_args[--namespace]:-default}}"
-    local ct="${opt_args[--controller]:-deployment}"
     local kubectl_args=$(_kdebug_kubectl_args)
-    local resource
-    case "$ct" in
-        deployment|deploy) resource="deployments" ;;
-        statefulset|sts) resource="statefulsets" ;;
-        daemonset|ds) resource="daemonsets" ;;
-        *) resource="deployments" ;;
-    esac
-    local -a names
-    names=(${(f)"$(kubectl $kubectl_args get "$resource" -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)"})
-    _describe 'controller name' names
+    local cur_word="${words[CURRENT]}"
+
+    if [[ "$cur_word" == */* ]]; then
+        # User typed TYPE/ - complete the name
+        local ct="${cur_word%%/*}"
+        local resource
+        case "$ct" in
+            deployment|deploy) resource="deployments" ;;
+            statefulset|sts) resource="statefulsets" ;;
+            daemonset|ds) resource="daemonsets" ;;
+            *) resource="deployments" ;;
+        esac
+        local -a names
+        names=(${(f)"$(kubectl $kubectl_args get "$resource" -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)"})
+        local -a completions
+        for name in "${names[@]}"; do
+            completions+=("${ct}/${name}")
+        done
+        compadd -Q -- "${completions[@]}"
+    else
+        # Complete the type prefix
+        local -a prefixes
+        prefixes=(
+            'deployment/:Deployment'
+            'deploy/:Deployment (short)'
+            'statefulset/:StatefulSet'
+            'sts/:StatefulSet (short)'
+            'daemonset/:DaemonSet'
+            'ds/:DaemonSet (short)'
+        )
+        _describe 'controller type' prefixes -S ''
+    fi
 }
 
 _kdebug() {
@@ -53,8 +74,7 @@ _kdebug() {
         '(-V --version)'{-V,--version}'[Show version and exit]'
         '(-h --help)'{-h,--help}'[Show help message]'
         '--pod[Pod name for direct selection]:pod:_kdebug_pods'
-        '--controller[Controller type]:type:(deployment deploy statefulset sts daemonset ds)'
-        '--controller-name[Controller name]:name:_kdebug_controller_names'
+        '--controller[Controller as TYPE/NAME]:controller:_kdebug_controllers'
         '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace]:namespace:_kdebug_namespaces'
         '--context[Kubernetes context to use]:context:_kdebug_contexts'
         '--kubeconfig[Path to kubeconfig file]:path:_files'
@@ -66,10 +86,9 @@ _kdebug() {
         '--compress[Compress backup as tar.gz]'
         '--as-root[Run debug container as root]'
         '--debug[Show kubectl commands being executed]'
-        '--completions[Output shell completion script]:shell:(bash zsh)'
+        '--completions[Output shell completion script]:shell:(bash zsh fish)'
     )
     _arguments -s $args
 }
 
 _kdebug "$@"
-
