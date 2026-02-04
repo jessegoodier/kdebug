@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -74,6 +75,8 @@ jobs:
   update-homebrew:
     needs: release
     uses: ./.github/workflows/update-homebrew.yml
+    with:
+      version: v${{ needs.release.outputs.version }}
     secrets: inherit
 
   publish-pypi:
