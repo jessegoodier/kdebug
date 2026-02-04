@@ -1,13 +1,13 @@
-# kdebug - Universal Kubernetes Debug Container Utility
+# kdebug - Universal Kubernetes Debug and File Copy Container Utility
 
-A powerful utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
+Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
 
 ## Features
 
-- 🎨 **Colorful Interactive TUI** - Navigate pods with arrow keys or number selection
-- 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive pod menu
-- 🐚 **Interactive Shell Access** - Launch bash/sh sessions in debug containers
+
+- 🐚 **Interactive Shell Access** - Launch bash/zsh sessions in debug containers directly to the directory of your choice
 - 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression
+- 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive tui
 - 🎯 **Smart Container Selection** - Auto-select containers or choose specific targets
 - 🔐 **Root Access Support** - Run debug containers as root when needed
 - 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
@@ -15,15 +15,22 @@ A powerful utility for launching ephemeral debug containers in Kubernetes pods w
 ## Installation
 
 ```bash
+brew install jessegoodier/kdebug/kdebug
+```
+
+Or
+
+```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/jessegoodier/kdebug.git
 cd kdebug
+```
 
-# Make executable
+Then make it is executable and add to something in your PATH
+
+```
 chmod +x bin/kdebug
-
-# Optional: Add to PATH
-sudo ln -s $(pwd)/bin/kdebug /usr/local/bin/kdebug
+ln -s $(pwd)/bin/kdebug ~/.local/bin/kdebug
 ```
 
 ## Shell Completion
@@ -75,7 +82,7 @@ kdebug supports kubectl-compatible `--context` and `--kubeconfig` flags to targe
 kdebug --context minikube -n default --pod my-pod
 
 # Use a different kubeconfig file
-kdebug --kubeconfig ~/.kube/other-config -n production
+kdebug --kubeconfig .kubeconfig -n openclaw
 
 # Combine both options
 kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
@@ -87,15 +94,15 @@ These options are passed to all kubectl commands, including those used for tab c
 
 When no pod or controller is specified, kdebug launches an interactive menu system:
 
-```bash
 # Interactive mode - select from all resources in current namespace
+```bash
 kdebug
+```
 
 # Interactive mode with specific namespace
-kdebug -n production
 
-# Interactive mode with namespace flag
-kdebug --namespace staging
+```bash
+kdebug -n openclaw
 ```
 
 **TUI Features:**
