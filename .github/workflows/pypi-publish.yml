@@ -24,7 +24,7 @@ jobs:
     environment: pypi
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
 
