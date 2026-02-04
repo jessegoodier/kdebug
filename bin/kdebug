@@ -31,8 +31,14 @@ import tty
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+VERSION = "0.1.0"
+
 # Global debug flag
 DEBUG_MODE = False
+
+# Global kubectl options (set after argument parsing)
+KUBECTL_CONTEXT = None
+KUBECTL_KUBECONFIG = None
 
 # ANSI Color codes (kubecolor-style)
 
@@ -80,6 +86,16 @@ CONTROLLER_ALIASES = {
 }
 
 
+def kubectl_base_cmd() -> str:
+    """Return kubectl command with global options."""
+    parts = ["kubectl"]
+    if KUBECTL_KUBECONFIG:
+        parts.append(f"--kubeconfig={KUBECTL_KUBECONFIG}")
+    if KUBECTL_CONTEXT:
+        parts.append(f"--context={KUBECTL_CONTEXT}")
+    return " ".join(parts)
+
+
 def print_debug_command(cmd: str):
     """Print command in a nice format when debug mode is enabled."""
     if DEBUG_MODE:
@@ -114,7 +130,7 @@ def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optiona
 
 def get_current_namespace() -> str:
     """Get the current namespace from kubectl context."""
-    cmd = "kubectl config view --minify --output 'jsonpath={..namespace}'"
+    cmd = f"{kubectl_base_cmd()} config view --minify --output 'jsonpath={{..namespace}}'"
     output = run_command(cmd, check=False)
     return output if output else "default"
 
@@ -124,7 +140,7 @@ def get_pod_by_name(pod_name: str, namespace: str) -> Optional[Dict]:
     print(
         f"Looking up pod {colorize(pod_name, Colors.CYAN)} in namespace {colorize(namespace, Colors.MAGENTA)}...")
 
-    cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
+    cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
     output = run_command(cmd, check=False)
 
     if not output:
@@ -164,7 +180,7 @@ def get_pods_by_controller(
     )
 
     # Get all pods in the namespace
-    cmd = f"kubectl get pods -n {namespace} -o json"
+    cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o json"
     output = run_command(cmd, check=False)
 
     if not output:
@@ -219,7 +235,7 @@ def get_all_controllers(namespace: str) -> Dict[str, List[Dict]]:
     }
 
     for controller_type in ["deployment", "statefulset", "daemonset"]:
-        cmd = f"kubectl get {controller_type} -n {namespace} -o json"
+        cmd = f"{kubectl_base_cmd()} get {controller_type} -n {namespace} -o json"
         output = run_command(cmd, check=False)
 
         if output:
@@ -247,7 +263,7 @@ def get_all_controllers(namespace: str) -> Dict[str, List[Dict]]:
 
 def get_all_pods(namespace: str) -> List[Dict]:
     """Get all pods in namespace with their status."""
-    cmd = f"kubectl get pods -n {namespace} -o json"
+    cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o json"
     output = run_command(cmd, check=False)
 
     if not output:
@@ -470,7 +486,7 @@ def select_pod(args) -> Optional[Dict]:
 
 def get_pod_containers(pod_name: str, namespace: str) -> Dict[str, List[str]]:
     """Get all containers from a pod, separated by type."""
-    cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
+    cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
     output = run_command(cmd)
 
     if not output:
@@ -536,7 +552,7 @@ def wait_for_container_running(
     last_reason = None
 
     while time.time() - start_time < timeout:
-        cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
+        cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
         output = run_command(cmd)
 
         if not output:
@@ -619,7 +635,7 @@ def wait_for_container_running(
 
 def check_pod_security_context(pod_name: str, namespace: str) -> Dict:
     """Check the pod's security context to see if running as root is allowed."""
-    cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
+    cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
     output = run_command(cmd, check=False)
 
     if not output:
@@ -689,7 +705,7 @@ def launch_debug_container(
 
     # Build kubectl debug command
     cmd_parts = [
-        "nohup kubectl debug -i --tty",
+        f"nohup {kubectl_base_cmd()} debug -i --tty",
         pod_name,
         f"--namespace={namespace}",
     ]
@@ -769,8 +785,12 @@ def exec_interactive(
             cmd = f"bash -c 'cd /proc/1/root{cd_into} && {cmd}'"
 
     # Build kubectl command - handle complex commands with shell
-    kubectl_cmd = [
-        "kubectl",
+    kubectl_cmd = ["kubectl"]
+    if KUBECTL_KUBECONFIG:
+        kubectl_cmd.extend(["--kubeconfig", KUBECTL_KUBECONFIG])
+    if KUBECTL_CONTEXT:
+        kubectl_cmd.extend(["--context", KUBECTL_CONTEXT])
+    kubectl_cmd.extend([
         "exec",
         "-it",
         pod_name,
@@ -779,7 +799,7 @@ def exec_interactive(
         "-c",
         container_name,
         "--",
-    ]
+    ])
 
     # Split the command if it's a simple command, otherwise use sh -c
     if cmd.startswith("bash -c") or cmd.startswith("sh -c"):
@@ -819,7 +839,7 @@ def create_backup(
     # Verify the backup path exists in the container using ls
     print(f"{colorize('Verifying backup path exists...', Colors.YELLOW)}")
     verify_cmd = (
-        f"kubectl exec {pod_name} "
+        f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
         f"-c {container_name} "
         f"-- ls -d {backup_path} 2>/dev/null"
@@ -835,7 +855,7 @@ def create_backup(
             print(
                 f"{colorize('Checking parent directory:', Colors.YELLOW)} {parent_dir}")
             parent_cmd = (
-                f"kubectl exec {pod_name} "
+                f"{kubectl_base_cmd()} exec {pod_name} "
                 f"-n {namespace} "
                 f"-c {container_name} "
                 f"-- ls -la {parent_dir} 2>/dev/null | head -20"
@@ -861,7 +881,7 @@ def create_backup(
         backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz {backup_path}"
 
         cmd = (
-            f"kubectl exec {pod_name} "
+            f"{kubectl_base_cmd()} exec {pod_name} "
             f"-n {namespace} "
             f"-c {container_name} "
             f"-- /bin/bash -c '{backup_cmd}'"
@@ -882,7 +902,7 @@ def create_backup(
         local_filename = f"{backup_dir}/{date_string}_{pod_name}.tar.gz"
 
         cmd = (
-            f"kubectl cp "
+            f"{kubectl_base_cmd()} cp "
             f"-n {namespace} "
             f"-c {container_name} "
             f"{pod_name}:/tmp/kdebug-backup.tar.gz "
@@ -900,7 +920,7 @@ def create_backup(
             f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_filename, Colors.GREEN)}")
 
         # Cleanup remote backup file
-        cleanup_cmd = f"kubectl exec {pod_name} -n {namespace} -c {container_name} -- rm -f /tmp/kdebug-backup.tar.gz"
+        cleanup_cmd = f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} -- rm -f /tmp/kdebug-backup.tar.gz"
         run_command(cleanup_cmd, check=False)
 
     else:
@@ -911,7 +931,7 @@ def create_backup(
         local_filename = f"{backup_dir}/{date_string}_{pod_name}"
 
         cmd = (
-            f"kubectl cp "
+            f"{kubectl_base_cmd()} cp "
             f"-n {namespace} "
             f"-c {container_name} "
             f"{pod_name}:{backup_path} "
@@ -939,7 +959,7 @@ def cleanup_debug_container(
 
     # Kill the sleep process in the debug container
     cmd = (
-        f"kubectl exec {pod_name} "
+        f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
         f"-c {debug_container} "
         f"-- /bin/bash -c 'kill -9 1' 2>/dev/null || true"
@@ -951,89 +971,388 @@ def cleanup_debug_container(
     return True
 
 
+def generate_bash_completion() -> str:
+    """Generate bash completion script."""
+    return '''# kdebug bash completion
+# Source this file or add to ~/.bashrc:
+#   source <(kdebug --completions bash)
+# Or:
+#   source /path/to/completions/kdebug.bash
+
+_kdebug_get_contexts() {
+    kubectl config get-contexts -o name 2>/dev/null
+}
+
+_kdebug_get_namespaces() {
+    local kubectl_args=$(_kdebug_get_kubectl_args)
+    kubectl $kubectl_args get namespaces -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+}
+
+_kdebug_get_pods() {
+    local ns="${1:-default}"
+    local kubectl_args=$(_kdebug_get_kubectl_args)
+    kubectl $kubectl_args get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+}
+
+_kdebug_get_controllers() {
+    local ns="${1:-default}"
+    local controller_type="$2"
+    local kubectl_args=$(_kdebug_get_kubectl_args)
+    case "$controller_type" in
+        deployment|deploy)
+            kubectl $kubectl_args get deployments -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+            ;;
+        statefulset|sts)
+            kubectl $kubectl_args get statefulsets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+            ;;
+        daemonset|ds)
+            kubectl $kubectl_args get daemonsets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+            ;;
+    esac
+}
+
+_kdebug_get_kubectl_args() {
+    local i args=""
+    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
+        case "${COMP_WORDS[i]}" in
+            --context)
+                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+                    args="$args --context=${COMP_WORDS[$((i+1))]}"
+                fi
+                ;;
+            --context=*)
+                args="$args ${COMP_WORDS[i]}"
+                ;;
+            --kubeconfig)
+                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+                    args="$args --kubeconfig=${COMP_WORDS[$((i+1))]}"
+                fi
+                ;;
+            --kubeconfig=*)
+                args="$args ${COMP_WORDS[i]}"
+                ;;
+        esac
+    done
+    echo "$args"
+}
+
+_kdebug_get_namespace_from_args() {
+    local i
+    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
+        case "${COMP_WORDS[i]}" in
+            -n|--namespace)
+                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+                    echo "${COMP_WORDS[$((i+1))]}"
+                    return
+                fi
+                ;;
+            -n=*|--namespace=*)
+                echo "${COMP_WORDS[i]#*=}"
+                return
+                ;;
+        esac
+    done
+    local kubectl_args=$(_kdebug_get_kubectl_args)
+    kubectl $kubectl_args config view --minify -o jsonpath='{..namespace}' 2>/dev/null || echo "default"
+}
+
+_kdebug_get_controller_from_args() {
+    local i
+    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
+        case "${COMP_WORDS[i]}" in
+            --controller)
+                if [[ $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+                    echo "${COMP_WORDS[$((i+1))]}"
+                    return
+                fi
+                ;;
+            --controller=*)
+                echo "${COMP_WORDS[i]#*=}"
+                return
+                ;;
+        esac
+    done
+}
+
+_kdebug() {
+    local cur prev words cword
+    _init_completion || return
+
+    local opts="--pod --controller --controller-name -n --namespace --context --kubeconfig
+                --container --debug-image --cmd --cd-into --backup --compress --as-root
+                --debug --completions -V --version --help -h"
+
+    local controller_types="deployment deploy statefulset sts daemonset ds"
+
+    case "$prev" in
+        -n|--namespace)
+            COMPREPLY=($(compgen -W "$(_kdebug_get_namespaces)" -- "$cur"))
+            return
+            ;;
+        --context)
+            COMPREPLY=($(compgen -W "$(_kdebug_get_contexts)" -- "$cur"))
+            return
+            ;;
+        --kubeconfig)
+            _filedir
+            return
+            ;;
+        --pod)
+            local ns=$(_kdebug_get_namespace_from_args)
+            COMPREPLY=($(compgen -W "$(_kdebug_get_pods "$ns")" -- "$cur"))
+            return
+            ;;
+        --controller)
+            COMPREPLY=($(compgen -W "$controller_types" -- "$cur"))
+            return
+            ;;
+        --controller-name)
+            local ns=$(_kdebug_get_namespace_from_args)
+            local ct=$(_kdebug_get_controller_from_args)
+            if [[ -n "$ct" ]]; then
+                COMPREPLY=($(compgen -W "$(_kdebug_get_controllers "$ns" "$ct")" -- "$cur"))
+            fi
+            return
+            ;;
+        --container|--debug-image|--cmd|--cd-into|--backup)
+            # These take arbitrary values, no completion
+            return
+            ;;
+        --completions)
+            COMPREPLY=($(compgen -W "bash zsh" -- "$cur"))
+            return
+            ;;
+    esac
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+        return
+    fi
+}
+
+complete -F _kdebug kdebug
+'''
+
+
+def generate_zsh_completion() -> str:
+    """Generate zsh completion script."""
+    return '''#compdef kdebug
+# kdebug zsh completion
+# Install: kdebug --completions zsh > ~/.zsh/completions/_kdebug
+# Or: source <(kdebug --completions zsh)
+
+_kdebug_kubectl_args() {
+    local args=""
+    [[ -n "${opt_args[--context]}" ]] && args="$args --context=${opt_args[--context]}"
+    [[ -n "${opt_args[--kubeconfig]}" ]] && args="$args --kubeconfig=${opt_args[--kubeconfig]}"
+    echo "$args"
+}
+
+_kdebug_contexts() {
+    local -a contexts
+    contexts=(${(f)"$(kubectl config get-contexts -o name 2>/dev/null)"})
+    _describe 'context' contexts
+}
+
+_kdebug_namespaces() {
+    local kubectl_args=$(_kdebug_kubectl_args)
+    local -a namespaces
+    namespaces=(${(f)"$(kubectl $kubectl_args get namespaces -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
+    _describe 'namespace' namespaces
+}
+
+_kdebug_pods() {
+    local ns="${opt_args[-n]:-${opt_args[--namespace]:-default}}"
+    local kubectl_args=$(_kdebug_kubectl_args)
+    local -a pods
+    pods=(${(f)"$(kubectl $kubectl_args get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
+    _describe 'pod' pods
+}
+
+_kdebug_controller_names() {
+    local ns="${opt_args[-n]:-${opt_args[--namespace]:-default}}"
+    local ct="${opt_args[--controller]:-deployment}"
+    local kubectl_args=$(_kdebug_kubectl_args)
+    local resource
+    case "$ct" in
+        deployment|deploy) resource="deployments" ;;
+        statefulset|sts) resource="statefulsets" ;;
+        daemonset|ds) resource="daemonsets" ;;
+        *) resource="deployments" ;;
+    esac
+    local -a names
+    names=(${(f)"$(kubectl $kubectl_args get "$resource" -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' 2>/dev/null)"})
+    _describe 'controller name' names
+}
+
+_kdebug() {
+    local -a args
+    args=(
+        '(-V --version)'{-V,--version}'[Show version and exit]'
+        '(-h --help)'{-h,--help}'[Show help message]'
+        '--pod[Pod name for direct selection]:pod:_kdebug_pods'
+        '--controller[Controller type]:type:(deployment deploy statefulset sts daemonset ds)'
+        '--controller-name[Controller name]:name:_kdebug_controller_names'
+        '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace]:namespace:_kdebug_namespaces'
+        '--context[Kubernetes context to use]:context:_kdebug_contexts'
+        '--kubeconfig[Path to kubeconfig file]:path:_files'
+        '--container[Target container for process namespace sharing]:container:'
+        '--debug-image[Debug container image]:image:'
+        '--cmd[Command to run in debug container]:command:'
+        '--cd-into[Change to directory on start]:directory:_files -/'
+        '--backup[Copy path from pod to local backups]:path:'
+        '--compress[Compress backup as tar.gz]'
+        '--as-root[Run debug container as root]'
+        '--debug[Show kubectl commands being executed]'
+        '--completions[Output shell completion script]:shell:(bash zsh)'
+    )
+    _arguments -s $args
+}
+
+_kdebug "$@"
+'''
+
+
+class KdebugHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Custom formatter for consistent help alignment."""
+
+    def __init__(self, prog, indent_increment=2, max_help_position=30, width=80):
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+
 def main():
     """Main function to orchestrate the debug container utility."""
     global DEBUG_MODE
 
     parser = argparse.ArgumentParser(
-        description="Universal Kubernetes Debug Container Utility",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Interactive session with controller
-  %(prog)s -n kubecost --controller sts --controller-name aggregator --container aggregator --cmd bash
+        prog="kdebug",
+        description="""Launch ephemeral debug containers in Kubernetes pods.
 
-  # Interactive session with direct pod
-  %(prog)s -n kubecost --pod aggregator-0 --container aggregator
-
-  # Change into specific directory
-  %(prog)s -n kubecost --pod aggregator-0 --container aggregator --cd-into /var/configs
-
-  # Backup mode
-  %(prog)s -n kubecost --pod aggregator-0 --container aggregator --backup /var/configs
-
-  # Using deployment
-  %(prog)s -n myapp --controller deployment --controller-name frontend --cmd sh
-        """,
+Usage:
+  kdebug [options]                                  Interactive TUI mode
+  kdebug --pod POD [options]                        Direct pod selection
+  kdebug --controller TYPE --controller-name NAME   Controller selection""",
+        formatter_class=KdebugHelpFormatter,
+        epilog="""Examples:
+  kdebug                                         # Interactive TUI
+  kdebug -n prod --pod api-0                     # Direct pod
+  kdebug --controller sts --controller-name db   # StatefulSet pod
+  kdebug --pod web-0 --backup /app/config        # Backup files""",
     )
 
-    # Pod selection arguments
-    pod_group = parser.add_argument_group("pod selection")
-    pod_group.add_argument("--pod", help="Pod name (direct selection)")
-    pod_group.add_argument(
+    # Version flag
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"%(prog)s {VERSION}"
+    )
+
+    # Target selection arguments
+    target_group = parser.add_argument_group("Target Selection")
+    target_group.add_argument(
+        "--pod",
+        metavar="NAME",
+        help="Pod name for direct selection"
+    )
+    target_group.add_argument(
         "--controller",
         choices=list(CONTROLLER_ALIASES.keys()),
-        help="Controller type (deployment, statefulset, daemonset, or aliases: deploy, sts, ds)",
+        metavar="TYPE",
+        help="Controller type: deployment, sts, ds (or full names)"
     )
-    pod_group.add_argument(
-        "--controller-name", help="Controller name (required with --controller)"
+    target_group.add_argument(
+        "--controller-name",
+        metavar="NAME",
+        help="Controller name (required with --controller)"
     )
 
-    # Configuration arguments
-    config_group = parser.add_argument_group("configuration")
-    config_group.add_argument(
-        "-n",
-        "--namespace",
-        help="Kubernetes namespace (default: current context namespace)",
+    # Options arguments
+    options_group = parser.add_argument_group("Options")
+    options_group.add_argument(
+        "-n", "--namespace",
+        metavar="NS",
+        help="Kubernetes namespace (default: current context)"
     )
-    config_group.add_argument(
-        "--container", help="Target container name (for --target flag in kubectl debug)"
+    options_group.add_argument(
+        "--context",
+        metavar="NAME",
+        help="Kubernetes context to use"
     )
-    config_group.add_argument(
+    options_group.add_argument(
+        "--kubeconfig",
+        metavar="PATH",
+        help="Path to kubeconfig file"
+    )
+    options_group.add_argument(
+        "--container",
+        metavar="NAME",
+        help="Target container for process namespace sharing"
+    )
+    options_group.add_argument(
         "--debug-image",
+        metavar="IMAGE",
         default="ghcr.io/jessegoodier/toolbox:latest",
-        help="Debug container image (default: ubuntu-based debug image)",
+        help="Debug image (default: ghcr.io/jessegoodier/toolbox:latest)"
     )
 
-    # Operation arguments
-    operation_group = parser.add_argument_group("operations")
-    operation_group.add_argument(
+    # Operations arguments
+    ops_group = parser.add_argument_group("Operations")
+    ops_group.add_argument(
         "--cmd",
+        metavar="CMD",
         default="bash",
-        help="Command to run in debug container (default: bash)",
+        help="Command to run in debug container (default: bash)"
     )
-    operation_group.add_argument(
-        "--cd-into", help="Start shell session in specified directory"
+    ops_group.add_argument(
+        "--cd-into",
+        metavar="DIR",
+        help="Change to directory on start (via /proc/1/root)"
     )
-    operation_group.add_argument(
-        "--backup", metavar="PATH", help="Create backup of specified path"
+    ops_group.add_argument(
+        "--backup",
+        metavar="PATH",
+        help="Copy path from pod to local ./backups/ directory"
     )
-    operation_group.add_argument(
-        "--compress", action="store_true", help="Compress backup with tar.gz (only with --backup)"
+    ops_group.add_argument(
+        "--compress",
+        action="store_true",
+        help="Compress backup as tar.gz (requires --backup)"
     )
-    operation_group.add_argument(
-        "--as-root", action="store_true", help="Run debug container as root user (UID 0)"
+    ops_group.add_argument(
+        "--as-root",
+        action="store_true",
+        help="Run debug container as root (UID 0)"
     )
 
     # Utility arguments
-    parser.add_argument(
-        "--debug", action="store_true", help="Enable debug mode (show kubectl commands)"
+    util_group = parser.add_argument_group("Utility")
+    util_group.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show kubectl commands being executed"
+    )
+    util_group.add_argument(
+        "--completions",
+        choices=["bash", "zsh"],
+        metavar="SHELL",
+        help="Output shell completion script"
     )
 
     args = parser.parse_args()
 
-    # Set debug mode
+    # Handle --completions early
+    if args.completions:
+        if args.completions == "bash":
+            print(generate_bash_completion())
+        else:
+            print(generate_zsh_completion())
+        sys.exit(0)
+
+    # Set debug mode and kubectl global options
     DEBUG_MODE = args.debug
+    global KUBECTL_CONTEXT, KUBECTL_KUBECONFIG
+    KUBECTL_CONTEXT = args.context
+    KUBECTL_KUBECONFIG = args.kubeconfig
 
     # Validate arguments - allow interactive mode if no pod/controller specified
     if args.controller and not args.controller_name:

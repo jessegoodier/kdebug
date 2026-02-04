@@ -26,7 +26,62 @@ chmod +x bin/kdebug
 sudo ln -s $(pwd)/bin/kdebug /usr/local/bin/kdebug
 ```
 
+## Shell Completion
+
+kdebug supports tab completion for bash and zsh with dynamic lookups for namespaces, pods, and controller names.
+
+### Bash
+
+```bash
+# Add to ~/.bashrc
+source <(kdebug --completions bash)
+
+# Or source the file directly
+source /path/to/kdebug/completions/kdebug.bash
+```
+
+### Zsh
+
+```bash
+# Option 1: Source directly (add to ~/.zshrc)
+source <(kdebug --completions zsh)
+
+# Option 2: Install to fpath (recommended)
+mkdir -p ~/.zsh/completions
+kdebug --completions zsh > ~/.zsh/completions/_kdebug
+# Add to ~/.zshrc before compinit:
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+### Completion Features
+
+- `kdebug --<TAB>` - Complete all options
+- `kdebug -n <TAB>` - Complete namespace names from cluster
+- `kdebug --pod <TAB>` - Complete pod names (respects -n flag)
+- `kdebug --controller <TAB>` - Complete controller types
+- `kdebug --controller sts --controller-name <TAB>` - Complete controller names
+- `kdebug --context <TAB>` - Complete context names from kubeconfig
+- `kdebug --kubeconfig <TAB>` - Complete file paths
+
 ## Usage
+
+### Global Options
+
+kdebug supports kubectl-compatible `--context` and `--kubeconfig` flags to target different clusters:
+
+```bash
+# Use a specific context
+kdebug --context minikube -n default --pod my-pod
+
+# Use a different kubeconfig file
+kdebug --kubeconfig ~/.kube/other-config -n production
+
+# Combine both options
+kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
+```
+
+These options are passed to all kubectl commands, including those used for tab completion.
 
 ### Interactive Mode (TUI)
 
