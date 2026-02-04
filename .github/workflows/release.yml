@@ -1,0 +1,84 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.new.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version
+        id: current
+        run: |
+          VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Calculate new version
+        id: new
+        run: |
+          IFS='.' read -r major minor patch <<< "${{ steps.current.outputs.version }}"
+          case "${{ inputs.release_type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          echo "version=${major}.${minor}.${patch}" >> $GITHUB_OUTPUT
+
+      - name: Update version in pyproject.toml
+        run: |
+          sed -i 's/^version = "[^"]*"/version = "${{ steps.new.outputs.version }}"/' pyproject.toml
+
+      - name: Commit and tag
+        run: |
+          git add pyproject.toml
+          git commit -m "Release v${{ steps.new.outputs.version }}"
+          git tag "v${{ steps.new.outputs.version }}"
+
+      - name: Push changes
+        run: |
+          git push origin HEAD:${{ github.ref_name }}
+          git push --tags
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.new.outputs.version }}" \
+            --generate-notes \
+            --latest
+
+  update-homebrew:
+    needs: release
+    uses: ./.github/workflows/update-homebrew.yml
+    secrets: inherit
+
+  publish-pypi:
+    needs: release
+    uses: ./.github/workflows/pypi-publish.yml
+    with:
+      ref: v${{ needs.release.outputs.version }}
+    secrets: inherit

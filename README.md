@@ -1,182 +1,300 @@
-# kdebug - Universal Kubernetes Debug Container Utility
+# kdebug - Universal Kubernetes Debug and File Copy Container Utility
 
-A CLI utility for launching ephemeral debug containers in Kubernetes pods with backup capabilities.
-
-Useful for debugging and backups of containers that do not have a shell or other debugging tools.
+Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
 
 ## Features
 
-- 🚀 Launch debug containers in any Kubernetes pod, with a nice shell environment (zsh or bash)
-- 📦 Backup files/directories from pods (compressed or uncompressed)
-- 🎨 Colorful kubecolor-style output
-- 🛡️ Run as root with `--as-root` flag
-- 📂 Change into expected directories with `--cd-into` (so you don't have to remember /proc/1/root)
-- 🍻 Use any container image (defaults to a large alpine image that includes a lot of common debugging tools [https://github.com/jessegoodier/toolbox](https://github.com/jessegoodier/toolbox)
+
+- 🐚 **Interactive Shell Access** - Launch bash/zsh sessions in debug containers directly to the directory of your choice
+- 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression
+- 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive tui
+- 🎯 **Smart Container Selection** - Auto-select containers or choose specific targets
+- 🔐 **Root Access Support** - Run debug containers as root when needed
+- 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
 
 ## Installation
 
-### Using Homebrew (Recommended)
-
-#### Option 1: Install from this tap (local development)
-
-
 ```bash
-# Add the tap
-brew tap jessegoodier/kdebug
-
-# Install kdebug
-brew install kdebug
+brew install jessegoodier/kdebug/kdebug
 ```
 
-### Manual Installation
+Or
 
 ```bash
 # Clone the repository
 git clone https://github.com/jessegoodier/kdebug.git
 cd kdebug
-
-# Make executable and add to PATH
-chmod +x bin/kdebug
-sudo ln -s $(pwd)/bin/kdebug /usr/local/bin/kdebug
 ```
 
-## Requirements
+Then make it is executable and add to something in your PATH
 
-- Python 3.11+
-- kubectl (configured with cluster access)
+```
+chmod +x bin/kdebug
+ln -s $(pwd)/bin/kdebug ~/.local/bin/kdebug
+```
+
+## Shell Completion
+
+kdebug supports tab completion for bash and zsh with dynamic lookups for namespaces, pods, and controller names.
+
+### Bash
+
+```bash
+# Add to ~/.bashrc
+source <(kdebug --completions bash)
+
+# Or source the file directly
+source /path/to/kdebug/completions/kdebug.bash
+```
+
+### Zsh
+
+```bash
+# Option 1: Source directly (add to ~/.zshrc)
+source <(kdebug --completions zsh)
+
+# Option 2: Install to fpath (recommended)
+mkdir -p ~/.zsh/completions
+kdebug --completions zsh > ~/.zsh/completions/_kdebug
+# Add to ~/.zshrc before compinit:
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+### Completion Features
+
+- `kdebug --<TAB>` - Complete all options
+- `kdebug -n <TAB>` - Complete namespace names from cluster
+- `kdebug --pod <TAB>` - Complete pod names (respects -n flag)
+- `kdebug --controller <TAB>` - Complete controller types
+- `kdebug --controller sts --controller-name <TAB>` - Complete controller names
+- `kdebug --context <TAB>` - Complete context names from kubeconfig
+- `kdebug --kubeconfig <TAB>` - Complete file paths
 
 ## Usage
 
-### Interactive Sessions
+### Global Options
+
+kdebug supports kubectl-compatible `--context` and `--kubeconfig` flags to target different clusters:
 
 ```bash
-# Interactive session with a specific pod
+# Use a specific context
+kdebug --context minikube -n default --pod my-pod
+
+# Use a different kubeconfig file
+kdebug --kubeconfig .kubeconfig -n openclaw
+
+# Combine both options
+kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
+```
+
+These options are passed to all kubectl commands, including those used for tab completion.
+
+### Interactive Mode (TUI)
+
+When no pod or controller is specified, kdebug launches an interactive menu system:
+
+# Interactive mode - select from all resources in current namespace
+```bash
+kdebug
+```
+
+# Interactive mode with specific namespace
+
+```bash
+kdebug -n openclaw
+```
+
+**TUI Features:**
+- ⬆️⬇️ Use arrow keys to navigate
+- 1️⃣-9️⃣ Press numbers for quick selection
+- ↩️ Press Enter to confirm
+- ❌ Press 'q' to quit
+
+The TUI displays all pods in the namespace with:
+- Color-coded status indicators (Green=Running, Yellow=Pending, etc.)
+- Pod names highlighted for easy identification
+- Real-time status information
+
+### Direct Pod Selection
+
+```bash
+# Interactive session with direct pod
 kdebug -n kubecost --pod aggregator-0 --container aggregator
 
-# Using a StatefulSet
-kdebug -n kubecost --controller sts --controller-name aggregator --container aggregator --cmd bash
+# Auto-select first container if not specified
+kdebug -n kubecost --pod aggregator-0
 
-# Using a Deployment
-kdebug -n myapp --controller deployment --controller-name frontend --cmd sh
-
-# Change into a specific directory
-kdebug -n myapp --pod mypod-0 --cd-into /var/configs
-
-# Run as root user
-kdebug -n myapp --pod mypod-0 --as-root
+# Custom shell command
+kdebug -n kubecost --pod aggregator-0 --cmd sh
 ```
 
-### Backup Operations
+### Controller-Based Selection
 
 ```bash
-# Direct copy (uncompressed) - faster for small files
-kdebug -n myapp --pod mypod-0 --backup /var/configs
+# Using StatefulSet (sts)
+kdebug -n kubecost --controller sts --controller-name aggregator --container aggregator
 
-# Compressed backup - better for large files/directories
-kdebug -n myapp --pod mypod-0 --backup /var/configs --compress
+# Using Deployment
+kdebug -n myapp --controller deployment --controller-name frontend --cmd bash
+
+# Using DaemonSet
+kdebug -n logging --controller ds --controller-name fluentd
 ```
 
-Backups are saved to `./backups/{namespace}/{timestamp}_{pod_name}[.tar.gz]`
+**Supported Controller Types:**
+- `deployment` or `deploy` - Kubernetes Deployments
+- `statefulset` or `sts` - StatefulSets
+- `daemonset` or `ds` - DaemonSets
 
-### Options
+### Advanced Features
 
-```
-Pod Selection:
-  --pod POD                    Pod name (direct selection)
-  --controller {deployment,deploy,statefulset,sts,daemonset,ds}
-                              Controller type
-  --controller-name NAME       Controller name (required with --controller)
+#### Change Directory on Start
 
-Configuration:
-  -n, --namespace NAMESPACE    Kubernetes namespace (default: current context)
-  --container CONTAINER        Target container name
-  --debug-image IMAGE          Debug container image (default: ghcr.io/jessegoodier/toolbox:latest)
-
-Operations:
-  --cmd CMD                    Command to run (default: bash)
-  --cd-into PATH              Start shell in specified directory
-  --backup PATH               Create backup of specified path
-  --compress                  Compress backup with tar.gz (only with --backup)
-  --as-root                   Run debug container as root user (UID 0)
-
-Utility:
-  --debug                     Enable debug mode (show kubectl commands)
+```bash
+# Start shell in specific directory
+kdebug -n kubecost --pod aggregator-0 --cd-into /var/configs
 ```
 
-## How It Works
+#### Backup Mode
 
-1. **Launches an ephemeral debug container** in the target pod
-2. **Shares process namespace** with the target container
-3. **Provides interactive shell** or performs backup operations
-4. **Automatically cleans up** the debug container when done
+```bash
+# Backup directory (uncompressed)
+kdebug -n kubecost --pod aggregator-0 --backup /var/configs
+
+# Backup with compression
+kdebug -n kubecost --pod aggregator-0 --backup /var/configs --compress
+
+# Backups are saved to: ./backups/<namespace>/<timestamp>_<pod-name>
+```
+
+#### Run as Root
+
+```bash
+# Launch debug container as root user
+kdebug -n myapp --pod frontend-abc123 --as-root
+```
+
+#### Debug Mode
+
+```bash
+# Show all kubectl commands being executed
+kdebug -n myapp --pod frontend-abc123 --debug
+```
 
 ## Examples
 
-### Debug a crashing pod
+### Example 1: Interactive Pod Selection
 
 ```bash
-kdebug -n production --pod api-server-0 --container api --cmd bash
+$ kdebug -n production
+
+Starting interactive pod selection...
+
+══════════════════════════════════════════════════════════════════════
+Select Pod in namespace: production
+══════════════════════════════════════════════════════════════════════
+
+▶ 1. frontend-abc123 (Running)
+  2. frontend-def456 (Running)
+  3. backend-ghi789 (Running)
+  4. database-0 (Running)
+  5. worker-jkl012 (Pending)
+
+──────────────────────────────────────────────────────────────────────
+Use ↑/↓ arrows or numbers to select, Enter to confirm, q to quit
+──────────────────────────────────────────────────────────────────────
 ```
 
-### Backup configuration files
+### Example 2: Quick Debug Session
 
 ```bash
-# Uncompressed (faster)
-kdebug -n production --pod api-server-0 --backup /etc/app/config
+# Launch debug container and get bash shell
+kdebug -n kubecost --controller sts --controller-name aggregator --container aggregator
 
-# Compressed (saves bandwidth)
-kdebug -n production --pod api-server-0 --backup /var/log --compress
+# Output:
+# ══════════════════════════════════════════════════════════════════════
+# Starting interactive session in pod aggregator-0
+# Container: debugger-xyz
+# Command: bash
+# ══════════════════════════════════════════════════════════════════════
 ```
 
-### Inspect a deployment's first pod
+### Example 3: Backup Configuration Files
 
 ```bash
-kdebug -n staging --controller deploy --controller-name web-app
+# Backup with compression
+kdebug -n production --pod api-server-0 --backup /etc/app/config --compress
+
+# Output:
+# ══════════════════════════════════════════════════════════════════════
+# Creating backup from pod api-server-0
+# Path: /etc/app/config
+# Mode: Compressed (tar.gz)
+# ══════════════════════════════════════════════════════════════════════
+# ✓ Path exists: /etc/app/config
+# ✓ Backup archive created
+# ✓ Backup saved to: ./backups/production/2024-02-04_10-30-45_api-server-0.tar.gz
 ```
 
-### Run commands as root
+## Color Scheme
 
-```bash
-kdebug -n production --pod db-0 --as-root --cmd "apt-get update && apt-get install -y tcpdump"
-```
+kdebug uses a kubecolor-inspired color scheme:
 
-## Development
+- 🔵 **Blue** - Borders and separators
+- 🟢 **Green** - Success messages and running status
+- 🟡 **Yellow** - Warnings and pending status
+- 🔴 **Red** - Errors and failed status
+- 🟣 **Magenta** - Namespaces
+- 🔷 **Cyan** - Pod and container names
+- ⚪ **White/Gray** - General text and metadata
 
-### Project Structure
+## Requirements
 
-```
-kdebug/
-├── bin/
-│   └── kdebug              # Main executable
-├── Formula/
-│   └── kdebug.rb          # Homebrew formula
-├── README.md              # This file
-└── VERSION                # Version tracking
-```
+- Python 3.6+
+- kubectl configured with cluster access
+- Kubernetes cluster with ephemeral containers support (v1.23+)
 
-### Creating a Homebrew Tap
+## How It Works
 
-To publish this as a Homebrew tap:
+1. **Resource Discovery** - Queries Kubernetes API for controllers/pods
+2. **Debug Container Launch** - Creates ephemeral container with debug image
+3. **Process Sharing** - Enables `--share-processes` for full pod access
+4. **Interactive Session** - Attaches to container with TTY
+5. **Cleanup** - Terminates debug container after session ends
 
-1. Create a GitHub repository named `homebrew-kdebug`
-2. Push this code to the repository
-3. Create a release with a tag (e.g., `v0.1.0`)
-4. Update the `url` and `sha256` in `Formula/kdebug.rb`
+## Troubleshooting
 
-Users can then install with:
-```bash
-brew tap jessegoodier/kdebug
-brew install kdebug
-```
+### "Operation not supported on socket" Error
+
+The interactive TUI requires a real terminal (TTY). Ensure you're running kdebug in:
+- A standard terminal (not piped or redirected)
+- Not through automation tools that don't provide TTY
+- With proper terminal emulation support
+
+### "Pod Security Policy" Warnings
+
+If you see warnings about `runAsNonRoot`, the pod has security restrictions. Try:
+- Running without `--as-root` flag
+- Checking pod security policies
+- Using a different debug image
+
+### Container Won't Start
+
+Check:
+- Debug image is accessible from cluster
+- Pod has sufficient resources
+- Network policies allow image pull
+- Use `--debug` flag to see kubectl commands
 
 ## License
 
 MIT
 
-## Author
-
-Jesse Goodier
-
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Please open issues or pull requests.
+
+---
+
+Made with ❤️ and Bob
