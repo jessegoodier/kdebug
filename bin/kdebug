@@ -25,9 +25,11 @@ import json
 import os
 import subprocess
 import sys
+import termios
 import time
+import tty
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Global debug flag
 DEBUG_MODE = False
@@ -208,6 +210,218 @@ def get_pods_by_controller(
     return matching_pods
 
 
+def get_all_controllers(namespace: str) -> Dict[str, List[Dict]]:
+    """Get all controllers (deployments, statefulsets, daemonsets) in namespace."""
+    controllers = {
+        "Deployment": [],
+        "StatefulSet": [],
+        "DaemonSet": []
+    }
+
+    for controller_type in ["deployment", "statefulset", "daemonset"]:
+        cmd = f"kubectl get {controller_type} -n {namespace} -o json"
+        output = run_command(cmd, check=False)
+
+        if output:
+            try:
+                data = json.loads(output)
+                for item in data.get("items", []):
+                    name = item.get("metadata", {}).get("name", "")
+                    replicas = item.get("spec", {}).get("replicas", 0)
+                    ready = item.get("status", {}).get("readyReplicas", 0)
+
+                    controller_kind = CONTROLLER_ALIASES.get(
+                        controller_type, controller_type)
+                    controllers[controller_kind].append({
+                        "name": name,
+                        "type": controller_type,
+                        "kind": controller_kind,
+                        "replicas": replicas,
+                        "ready": ready
+                    })
+            except json.JSONDecodeError:
+                pass
+
+    return controllers
+
+
+def get_all_pods(namespace: str) -> List[Dict]:
+    """Get all pods in namespace with their status."""
+    cmd = f"kubectl get pods -n {namespace} -o json"
+    output = run_command(cmd, check=False)
+
+    if not output:
+        return []
+
+    try:
+        data = json.loads(output)
+        pods = []
+        for item in data.get("items", []):
+            name = item.get("metadata", {}).get("name", "")
+            status = item.get("status", {}).get("phase", "Unknown")
+            pods.append({
+                "name": name,
+                "status": status,
+                "namespace": namespace
+            })
+        return pods
+    except json.JSONDecodeError:
+        return []
+
+
+def read_key() -> str:
+    """Read a single keypress from stdin."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        # Handle arrow keys (escape sequences)
+        if ch == '\x1b':
+            ch2 = sys.stdin.read(1)
+            if ch2 == '[':
+                ch3 = sys.stdin.read(1)
+                if ch3 == 'A':
+                    return 'up'
+                elif ch3 == 'B':
+                    return 'down'
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def display_menu(title: str, items: List[str], selected_idx: int, show_numbers: bool = True):
+    """Display a colorful menu with the selected item highlighted."""
+    # Clear screen
+    print("\033[2J\033[H", end="")
+
+    # Print title
+    print(f"\n{colorize('═' * 70, Colors.BLUE)}")
+    print(f"{colorize(title, Colors.BOLD + Colors.BRIGHT_CYAN)}")
+    print(f"{colorize('═' * 70, Colors.BLUE)}\n")
+
+    # Print items
+    for idx, item in enumerate(items):
+        if idx == selected_idx:
+            # Highlighted item
+            prefix = "▶ " if show_numbers else "  "
+            number = f"{idx + 1}. " if show_numbers else ""
+            print(
+                f"{colorize(prefix + number + item, Colors.BOLD + Colors.BRIGHT_GREEN)}")
+        else:
+            # Normal item
+            prefix = "  "
+            number = f"{idx + 1}. " if show_numbers else ""
+            print(f"{colorize(prefix + number + item, Colors.WHITE)}")
+
+    # Print quit option as selectable item
+    quit_idx = len(items)
+    if selected_idx == quit_idx:
+        print(f"\n{colorize('▶ q. Quit', Colors.BOLD + Colors.BRIGHT_GREEN)}")
+    else:
+        print(
+            f"\n  {colorize('q.', Colors.WHITE)} {colorize('Quit', Colors.CYAN)}")
+
+    # Print instructions
+    print(f"\n{colorize('─' * 70, Colors.DIM)}")
+    if show_numbers:
+        print(
+            f"{colorize('Use ↑/↓ arrows or numbers to select, Enter to confirm', Colors.BRIGHT_BLACK)}")
+    else:
+        print(
+            f"{colorize('Use ↑/↓ arrows to select, Enter to confirm', Colors.BRIGHT_BLACK)}")
+    print(f"{colorize('─' * 70, Colors.DIM)}\n")
+
+
+def interactive_menu(title: str, items: List[str], show_numbers: bool = True) -> Optional[int]:
+    """Display an interactive menu and return the selected index."""
+    if not items:
+        print(f"{colorize('✗ Error:', Colors.RED)} No items to display")
+        return None
+
+    selected_idx = 0
+    quit_idx = len(items)  # Quit is one position after last item
+
+    while True:
+        display_menu(title, items, selected_idx, show_numbers)
+
+        key = read_key()
+
+        if key == 'up':
+            selected_idx = (selected_idx - 1) % (len(items) + 1)
+        elif key == 'down':
+            selected_idx = (selected_idx + 1) % (len(items) + 1)
+        elif key == '\r' or key == '\n':  # Enter
+            if selected_idx == quit_idx:
+                return None  # Quit selected
+            return selected_idx
+        elif key == 'q' or key == 'Q':
+            return None
+        elif key.isdigit() and show_numbers:
+            num = int(key)
+            if 1 <= num <= len(items):
+                selected_idx = num - 1
+                return selected_idx
+
+
+def select_controller_interactive(namespace: str) -> Optional[Tuple[str, str]]:
+    """Interactive TUI for selecting a controller."""
+    print(f"\n{colorize('Fetching controllers...', Colors.YELLOW)}")
+    controllers = get_all_controllers(namespace)
+
+    # Flatten controllers into menu items
+    menu_items = []
+    controller_map = []
+
+    for kind in ["Deployment", "StatefulSet", "DaemonSet"]:
+        for ctrl in controllers[kind]:
+            status = f"{ctrl['ready']}/{ctrl['replicas']}" if ctrl['replicas'] > 0 else "N/A"
+            menu_items.append(
+                f"{colorize(kind, Colors.YELLOW)} {colorize(ctrl['name'], Colors.CYAN)} "
+                f"({colorize(status, Colors.GREEN if ctrl['ready'] == ctrl['replicas'] else Colors.YELLOW)})"
+            )
+            controller_map.append((ctrl['type'], ctrl['name']))
+
+    if not menu_items:
+        print(f"{colorize('✗ Error:', Colors.RED)} No controllers found in namespace {colorize(namespace, Colors.MAGENTA)}")
+        return None
+
+    title = f"Select Controller in namespace: {colorize(namespace, Colors.MAGENTA)}"
+    selected_idx = interactive_menu(title, menu_items)
+
+    if selected_idx is None:
+        return None
+
+    return controller_map[selected_idx]
+
+
+def select_pod_interactive(namespace: str) -> Optional[str]:
+    """Interactive TUI for selecting a pod."""
+    print(f"\n{colorize('Fetching pods...', Colors.YELLOW)}")
+    pods = get_all_pods(namespace)
+
+    if not pods:
+        print(f"{colorize('✗ Error:', Colors.RED)} No pods found in namespace {colorize(namespace, Colors.MAGENTA)}")
+        return None
+
+    # Create menu items
+    menu_items = []
+    for pod in pods:
+        status_color = Colors.GREEN if pod['status'] == 'Running' else Colors.YELLOW
+        menu_items.append(
+            f"{colorize(pod['name'], Colors.CYAN)} "
+            f"({colorize(pod['status'], status_color)})"
+        )
+
+    title = f"Select Pod in namespace: {colorize(namespace, Colors.MAGENTA)}"
+    selected_idx = interactive_menu(title, menu_items)
+
+    if selected_idx is None:
+        return None
+
+    return pods[selected_idx]['name']
+
+
 def select_pod(args) -> Optional[Dict]:
     """Select a pod based on provided arguments."""
     namespace = args.namespace or get_current_namespace()
@@ -241,8 +455,17 @@ def select_pod(args) -> Optional[Dict]:
 
         return pods[0]
 
-    print("Error: Either --pod or --controller must be specified", file=sys.stderr)
-    return None
+    # Interactive mode - no pod or controller specified
+    print(
+        f"\n{colorize('Starting interactive pod selection...', Colors.BRIGHT_CYAN)}")
+
+    # Direct pod selection via TUI
+    pod_name = select_pod_interactive(namespace)
+    if not pod_name:
+        print(f"\n{colorize('Selection cancelled', Colors.YELLOW)}")
+        return None
+
+    return {"name": pod_name, "namespace": namespace}
 
 
 def get_pod_containers(pod_name: str, namespace: str) -> Dict[str, List[str]]:
@@ -812,10 +1035,7 @@ Examples:
     # Set debug mode
     DEBUG_MODE = args.debug
 
-    # Validate arguments
-    if not args.pod and not args.controller:
-        parser.error("Either --pod or --controller must be specified")
-
+    # Validate arguments - allow interactive mode if no pod/controller specified
     if args.controller and not args.controller_name:
         parser.error("--controller-name is required when using --controller")
 
