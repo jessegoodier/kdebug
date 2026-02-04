@@ -112,6 +112,28 @@ source <(kdebug --completions zsh)
 kdebug --<TAB>
 ```
 
+## GitHub Actions & Dependencies
+
+**IMPORTANT: Always use the latest stable versions of GitHub Actions and dependencies to avoid security vulnerabilities (CVEs).**
+
+### Current Action Versions (keep updated)
+
+- `actions/checkout@v6`
+- `astral-sh/setup-uv@v7`
+
+### Guidelines
+
+1. **Never hardcode old versions** - Check the action's repository for the latest major version
+2. **Use major version tags** (e.g., `@v6`) not specific commits or minor versions
+3. **Dependabot is configured** - Review and merge dependabot PRs promptly
+4. **When adding new actions** - Always check for the latest version first via the action's GitHub repo or marketplace page
+
+### Workflow Files
+
+- `.github/workflows/release.yml` - Main release automation
+- `.github/workflows/pypi-publish.yml` - PyPI publishing with OIDC trusted publisher
+- `.github/workflows/update-homebrew.yml` - Homebrew tap updates
+
 ## Code Conventions
 
 - Use `colorize()` for colored output
