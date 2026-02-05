@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kdebug"
-version = "0.3.0"
+version = "0.3.1"
 description = "Universal Kubernetes Debug Container Utility"
 readme = "README.md"
 license = "MIT"
