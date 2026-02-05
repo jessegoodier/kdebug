@@ -7,7 +7,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout
+      - uses: actions/checkout@v6
       - run: |
           echo "trigger" >> register.txt
           git config user.name "github-actions"
