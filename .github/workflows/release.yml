@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
   id-token: write
 
 jobs:
@@ -53,16 +54,32 @@ jobs:
         run: |
           sed -i 's/^version = "[^"]*"/version = "${{ steps.new.outputs.version }}"/' pyproject.toml
 
-      - name: Commit and tag
+      - name: Create release branch and push
         run: |
+          BRANCH="release/v${{ steps.new.outputs.version }}"
+          git checkout -b "$BRANCH"
           git add pyproject.toml
           git commit -m "Release v${{ steps.new.outputs.version }}"
-          git tag "v${{ steps.new.outputs.version }}"
+          git push origin "$BRANCH"
 
-      - name: Push changes
+      - name: Create and merge PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git push origin HEAD:${{ github.ref_name }}
-          git push --tags
+          VERSION="v${{ steps.new.outputs.version }}"
+          BRANCH="release/$VERSION"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "Release $VERSION" \
+            --body "Automated release $VERSION"
+          gh pr merge "$BRANCH" --squash --delete-branch
+
+      - name: Tag release and push
+        run: |
+          git fetch origin main
+          git tag "v${{ steps.new.outputs.version }}" origin/main
+          git push origin "v${{ steps.new.outputs.version }}"
 
       - name: Create GitHub Release
         env:
