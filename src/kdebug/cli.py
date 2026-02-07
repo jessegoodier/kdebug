@@ -138,6 +138,19 @@ def get_current_namespace() -> str:
     return output if output else "default"
 
 
+def validate_cluster_connection(namespace: str) -> Optional[str]:
+    """Validate kubectl can connect to the cluster and namespace exists.
+
+    Returns None on success, or an error message string on failure.
+    """
+    cmd = f"{kubectl_base_cmd()} get namespace {namespace} -o name"
+    print_debug_command(cmd)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        return result.stderr.strip()
+    return None
+
+
 def get_pod_by_name(pod_name: str, namespace: str) -> Optional[Dict]:
     """Get pod information by name."""
     print(
@@ -449,6 +462,14 @@ def select_pod_interactive(namespace: str) -> Optional[str]:
 def select_pod(args) -> Optional[Dict]:
     """Select a pod based on provided arguments."""
     namespace = args.namespace or get_current_namespace()
+
+    # Validate cluster connection and namespace before proceeding
+    error = validate_cluster_connection(namespace)
+    if error:
+        print(
+            f"{colorize('✗ Error:', Colors.RED)} {error}"
+        )
+        return None
 
     # Direct pod selection
     if args.pod:
