@@ -701,6 +701,42 @@ def check_pod_security_context(pod_name: str, namespace: str) -> Dict:
         return {"can_run_as_root": True, "reason": "Unable to parse pod spec"}
 
 
+def get_container_run_as_user(
+    pod_name: str, namespace: str, target_container: Optional[str]
+) -> Optional[int]:
+    """Detect the runAsUser UID from the target container or pod security context."""
+    cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
+    output = run_command(cmd, check=False)
+
+    if not output:
+        return None
+
+    try:
+        pod_data = json.loads(output)
+        spec = pod_data.get("spec", {})
+
+        # Check container-level securityContext first (overrides pod-level)
+        if target_container:
+            for container in spec.get("containers", []):
+                if container.get("name") == target_container:
+                    container_uid = container.get("securityContext", {}).get(
+                        "runAsUser"
+                    )
+                    if container_uid is not None:
+                        return int(container_uid)
+                    break
+
+        # Fall back to pod-level securityContext
+        pod_uid = spec.get("securityContext", {}).get("runAsUser")
+        if pod_uid is not None:
+            return int(pod_uid)
+
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    return None
+
+
 def launch_debug_container(
     pod_name: str,
     namespace: str,
@@ -708,6 +744,7 @@ def launch_debug_container(
     target_container: Optional[str],
     existing_containers: List[str],
     as_root: bool = False,
+    run_as_user: Optional[int] = None,
 ) -> Optional[str]:
     """Launch a debug container attached to the pod and return its name."""
     print(f"Launching debug container for pod {colorize(pod_name, Colors.CYAN)}...")
@@ -725,6 +762,10 @@ def launch_debug_container(
                 file=sys.stderr,
             )
             print(f"{colorize('Tip:', Colors.CYAN)} Try without --as-root flag\n")
+    elif run_as_user is not None:
+        print(
+            f"Running as UID {colorize(str(run_as_user), Colors.CYAN)} (matching target container)"
+        )
 
     # if existing_containers:
     #     print(
@@ -750,6 +791,10 @@ def launch_debug_container(
 
     if as_root:
         cmd_parts.append('--custom=<(echo \'{"securityContext":{"runAsUser":0}}\')')
+    elif run_as_user is not None:
+        cmd_parts.append(
+            f'--custom=<(echo \'{{"securityContext":{{"runAsUser":{run_as_user}}}}}\')'
+        )
 
     cmd_parts.extend(
         [
@@ -1219,6 +1264,11 @@ Usage:
         # For simplicity, we'll create a new one. In production, you might want to reuse.
         print(f"{colorize('Creating new debug container...', Colors.MAGENTA)}")
 
+    # Detect target container UID for the debug container
+    run_as_user = None
+    if not args.as_root:
+        run_as_user = get_container_run_as_user(pod_name, namespace, target_container)
+
     # Launch debug container
     debug_container = launch_debug_container(
         pod_name,
@@ -1227,6 +1277,7 @@ Usage:
         target_container,
         existing_containers,
         args.as_root,
+        run_as_user,
     )
 
     if not debug_container:
