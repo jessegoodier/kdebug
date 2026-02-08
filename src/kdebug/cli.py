@@ -466,9 +466,7 @@ def select_pod(args) -> Optional[Dict]:
     # Validate cluster connection and namespace before proceeding
     error = validate_cluster_connection(namespace)
     if error:
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} {error}"
-        )
+        print(f"{colorize('✗ Error:', Colors.RED)} {error}")
         return None
 
     # Direct pod selection
@@ -495,12 +493,12 @@ def select_pod(args) -> Optional[Dict]:
         return pods[0]
 
     # Interactive mode - no pod or controller specified
-    print(f"\n{colorize('Starting interactive pod selection...', Colors.BRIGHT_CYAN)}")
+    print(f"\n{colorize('Starting interactive pod selection...', Colors.CYAN)}")
 
     # Direct pod selection via TUI
     pod_name = select_pod_interactive(namespace)
     if not pod_name:
-        print(f"\n{colorize('Selection cancelled', Colors.YELLOW)}")
+        print(f"\n{colorize('Selection cancelled', Colors.CYAN)}")
         return None
 
     return {"name": pod_name, "namespace": namespace}
@@ -728,10 +726,10 @@ def launch_debug_container(
             )
             print(f"{colorize('Tip:', Colors.CYAN)} Try without --as-root flag\n")
 
-    if existing_containers:
-        print(
-            f"Existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
-        )
+    # if existing_containers:
+    #     print(
+    #         f"Existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
+    #     )
 
     # Build kubectl debug command
     cmd_parts = [
@@ -798,13 +796,12 @@ def exec_interactive(
 ) -> int:
     """Execute an interactive command in the debug container."""
     print(f"\n{colorize('=' * 60, Colors.BLUE)}")
-    print(
-        f"{colorize('Starting interactive session', Colors.BOLD)} in pod {colorize(pod_name, Colors.CYAN)}"
-    )
+    print(f"{colorize('Starting interactive session', Colors.BOLD)} in:")
+    print(f"Pod: {colorize(pod_name, Colors.CYAN)}")
     print(f"Container: {colorize(container_name, Colors.CYAN)}")
-    print(f"Command: {colorize(cmd, Colors.YELLOW)}")
+    print(f"Command: {colorize(cmd, Colors.CYAN)}")
     if cd_into:
-        print(f"Directory: {colorize(cd_into, Colors.MAGENTA)}")
+        print(f"Directory: {colorize(cd_into, Colors.CYAN)}")
     print(f"{colorize('=' * 60, Colors.BLUE)}\n")
 
     # If cd_into is specified, wrap command to cd first
@@ -1043,7 +1040,7 @@ def parse_controller_arg(value: str) -> Tuple[str, str]:
     controller_type, controller_name = value.split("/", 1)
     if not controller_name:
         raise argparse.ArgumentTypeError(
-            f"Missing controller name after '/'. Expected TYPE/NAME (e.g. sts/myapp)."
+            "Missing controller name after '/'. Expected TYPE/NAME (e.g. sts/myapp)."
         )
     if controller_type.lower() not in CONTROLLER_ALIASES:
         valid_types = ", ".join(sorted(CONTROLLER_ALIASES.keys()))
@@ -1200,15 +1197,13 @@ Usage:
         )
 
     print(f"\n{colorize('=' * 60, Colors.BLUE)}")
+    print(f"{colorize('Namespace:', Colors.BOLD)} {colorize(namespace, Colors.CYAN)}")
     print(f"{colorize('Target Pod:', Colors.BOLD)} {colorize(pod_name, Colors.CYAN)}")
-    print(
-        f"{colorize('Namespace:', Colors.BOLD)} {colorize(namespace, Colors.MAGENTA)}"
-    )
     print(
         f"{colorize('Target Container:', Colors.BOLD)} {colorize(target_container, Colors.CYAN)}"
     )
     print(
-        f"{colorize('Debug Image:', Colors.BOLD)} {colorize(args.debug_image, Colors.BRIGHT_BLACK)}"
+        f"{colorize('Debug Image:', Colors.BOLD)} {colorize(args.debug_image, Colors.CYAN)}"
     )
     print(f"{colorize('=' * 60, Colors.BLUE)}\n")
 
@@ -1222,7 +1217,7 @@ Usage:
             f"Found existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
         )
         # For simplicity, we'll create a new one. In production, you might want to reuse.
-        print(f"{colorize('Creating new debug container...', Colors.YELLOW)}")
+        print(f"{colorize('Creating new debug container...', Colors.MAGENTA)}")
 
     # Launch debug container
     debug_container = launch_debug_container(
