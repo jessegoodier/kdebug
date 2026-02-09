@@ -925,7 +925,7 @@ def create_backup(
         f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
         f"-c {container_name} "
-        f"-- ls -d {backup_path} 2>/dev/null"
+        f"-- ls -d /proc/1/root{backup_path} 2>/dev/null"
     )
 
     result = run_command(verify_cmd, check=False)
@@ -945,7 +945,7 @@ def create_backup(
                 f"{kubectl_base_cmd()} exec {pod_name} "
                 f"-n {namespace} "
                 f"-c {container_name} "
-                f"-- ls -la {parent_dir} 2>/dev/null | head -20"
+                f"-- ls -la /proc/1/root{parent_dir} 2>/dev/null | head -20"
             )
             parent_result = run_command(parent_cmd, check=False)
             if parent_result:
@@ -1019,7 +1019,7 @@ def create_backup(
             f"{kubectl_base_cmd()} cp "
             f"-n {namespace} "
             f"-c {container_name} "
-            f"{pod_name}:{backup_path} "
+            f"{pod_name}:/proc/1/root{backup_path} "
             f"{local_filename}"
         )
 
