@@ -2,7 +2,7 @@
 
 Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
 
-Similar to kpf <https://github.com/jessegoodier/kpf>, this is a python wrapper around `kubectl debug` and `kubectl cp`.
+Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper around `kubectl debug` and `kubectl cp`.
 
 ## Features
 
@@ -12,6 +12,18 @@ Similar to kpf <https://github.com/jessegoodier/kpf>, this is a python wrapper a
 - 🎯 **Smart Container Selection** - Auto-select containers or choose specific targets
 - 🔐 **Root Access Support** - Run debug containers as root when needed
 - 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
+
+<details>
+<summary>Demo of the debug TUI</summary>
+
+![debug tui](docs/kdebug-demo_tui.gif)
+</details>
+
+<details>
+<summary>Demo of backups</summary>
+
+![backup demo](docs/kdebug-demo_backups.gif)
+</details>
 
 ## Installation
 
@@ -27,7 +39,7 @@ git clone https://github.com/jessegoodier/kdebug.git
 cd kdebug
 ```
 
-Then make it is executable and add to something in your PATH
+Then make it executable and add to something in your PATH
 
 ```
 chmod +x bin/kdebug
@@ -95,14 +107,11 @@ These options are passed to all kubectl commands, including those used for tab c
 
 When no pod or controller is specified, kdebug launches an interactive menu system:
 
-# Interactive mode - select from all resources in current namespace
 ```bash
+# Interactive mode - select from all resources in current namespace
 kdebug
-```
 
 # Interactive mode with specific namespace
-
-```bash
 kdebug -n openclaw
 ```
 
@@ -252,7 +261,7 @@ kdebug uses a kubecolor-inspired color scheme:
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.9+
 - kubectl configured with cluster access
 - Kubernetes cluster with ephemeral containers support (v1.23+)
 
