@@ -13,13 +13,13 @@ Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper 
 - 🔐 **Root Access Support** - Run debug containers as root when needed
 - 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
 
-<details>
+<details open>
 <summary>Demo of the debug TUI</summary>
 
 ![debug tui](docs/kdebug-demo_tui.gif)
 </details>
 
-<details>
+<details open>
 <summary>Demo of backups</summary>
 
 ![backup demo](docs/kdebug-demo_backups.gif)
