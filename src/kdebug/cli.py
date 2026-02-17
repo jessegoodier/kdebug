@@ -7,23 +7,20 @@ A utility for launching ephemeral debug containers in Kubernetes pods with
 interactive shell access and backup capabilities.
 
 Usage Examples:
-    # Interactive session with controller
-    ./kdebug.py -n kubecost --controller sts/aggregator --container aggregator --cmd bash
-
-    # Interactive session with direct pod
-    ./kdebug.py -n kubecost --pod aggregator-0 --container aggregator
+    # Interactive debug session (default subcommand)
+    kdebug -n kubecost --controller sts/aggregator --container aggregator --cmd bash
+    kdebug debug -n kubecost --pod aggregator-0 --container aggregator
 
     # Backup mode
-    ./kdebug.py -n kubecost --pod aggregator-0 --container aggregator --backup /var/configs
-
-    # Using deployment
-    ./kdebug.py -n myapp --controller deploy/frontend --cmd sh
+    kdebug backup -n kubecost --pod aggregator-0 --container aggregator --container-path /var/configs
+    kdebug backup --pod web-0 --container-path /var/data --local-path ./my-backups/{namespace}/{pod}
 """
 
 import argparse
 import importlib.resources
 import json
 import os
+import re
 import subprocess
 import sys
 import termios
@@ -136,6 +133,55 @@ def get_current_namespace() -> str:
     )
     output = run_command(cmd, check=False)
     return output if output else "default"
+
+
+_CONFIG_KEYS = {"debugImage", "cmd", "cdInto", "backupContainerPath", "backupLocalPath"}
+
+_HARDCODED_DEFAULTS = {
+    "debugImage": "ghcr.io/jessegoodier/toolbox-common:latest",
+    "cmd": "bash",
+}
+
+
+def load_config() -> Dict:
+    """Load config from ~/.config/kdebug/kdebug.json (respects XDG_CONFIG_HOME).
+
+    Returns a dict of config values, or empty dict if no config file exists.
+    """
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_path = os.path.join(config_home, "kdebug", "kdebug.json")
+
+    if not os.path.isfile(config_path):
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        print(
+            f"{colorize('⚠ Warning:', Colors.YELLOW)} Failed to parse {config_path}: {e}",
+            file=sys.stderr,
+        )
+        return {}
+
+    unknown_keys = set(config.keys()) - _CONFIG_KEYS
+    if unknown_keys:
+        print(
+            f"{colorize('⚠ Warning:', Colors.YELLOW)} Unknown config keys in {config_path}: {', '.join(sorted(unknown_keys))}",
+            file=sys.stderr,
+        )
+
+    # Expand ${VAR} environment variables in string values
+    def expand_env(value):
+        if isinstance(value, str):
+            return re.sub(
+                r"\$\{(\w+)\}",
+                lambda m: os.environ.get(m.group(1), m.group(0)),
+                value,
+            )
+        return value
+
+    return {k: expand_env(v) for k, v in config.items() if k in _CONFIG_KEYS}
 
 
 def validate_cluster_connection(namespace: str) -> Optional[str]:
@@ -552,7 +598,7 @@ def get_existing_ephemeral_containers(pod_name: str, namespace: str) -> List[str
 
 
 def wait_for_container_running(
-    pod_name: str, namespace: str, container_name: str, timeout: int = 60
+    pod_name: str, namespace: str, container_name: str, timeout: int = 120
 ) -> bool:
     """Poll until the container is in running state or timeout."""
     print(
@@ -681,7 +727,7 @@ def check_pod_security_context(pod_name: str, namespace: str) -> Dict:
         run_as_non_root = pod_security_context.get("runAsNonRoot", False)
 
         # Check if there's a runAsUser set at pod level
-        pod_run_as_user = pod_security_context.get("runAsUser")
+        pod_run_as_user = pod_security_context.get("runAsUser")  # noqa: F841
 
         # Check container-level security contexts
         containers = spec.get("containers", [])
@@ -900,43 +946,99 @@ def exec_interactive(
         return 1
 
 
+_BACKUP_LOCAL_PATH_DEFAULT = "./backups/{namespace}/{date}_{pod}"
+_BACKUP_TEMPLATE_VARS = {"namespace", "pod", "date", "container"}
+
+
+def validate_local_path_template(template: str) -> Optional[str]:
+    """Validate that a local-path template only uses known variables.
+
+    Returns None on success, or an error message string on failure.
+    """
+    unknown = set()
+    for match in re.finditer(r"\{(\w+)\}", template):
+        var = match.group(1)
+        if var not in _BACKUP_TEMPLATE_VARS:
+            unknown.add(var)
+    if unknown:
+        available = ", ".join(f"{{{v}}}" for v in sorted(_BACKUP_TEMPLATE_VARS))
+        return (
+            f"Unknown template variable(s): {', '.join(f'{{{v}}}' for v in sorted(unknown))}. "
+            f"Available variables: {available}"
+        )
+    return None
+
+
+def expand_local_path(
+    template: str, namespace: str, pod_name: str, container_name: str
+) -> str:
+    """Expand a local-path template with actual values."""
+    date_string = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return template.format_map(
+        {
+            "namespace": namespace,
+            "pod": pod_name,
+            "date": date_string,
+            "container": container_name,
+        }
+    )
+
+
 def create_backup(
     pod_name: str,
     namespace: str,
     container_name: str,
-    backup_path: str,
+    container_path: str,
+    local_path_template: str,
     compress: bool = False,
 ) -> bool:
     """Create a backup of the specified path and copy it locally."""
+    # Validate template before doing anything
+    template_error = validate_local_path_template(local_path_template)
+    if template_error:
+        print(
+            f"{colorize('✗ Error:', Colors.RED)} {template_error}",
+            file=sys.stderr,
+        )
+        return False
+
+    # Expand the local path template
+    local_path = expand_local_path(
+        local_path_template, namespace, pod_name, container_name
+    )
+    if compress:
+        local_path += ".tar.gz"
+
     print(f"\n{colorize('=' * 60, Colors.BLUE)}")
     print(
         f"{colorize('Creating backup', Colors.BOLD)} from pod {colorize(pod_name, Colors.CYAN)}"
     )
-    print(f"Path: {colorize(backup_path, Colors.MAGENTA)}")
+    print(f"Container path: {colorize(container_path, Colors.MAGENTA)}")
+    print(f"Local path: {colorize(local_path, Colors.MAGENTA)}")
     if compress:
         print(f"Mode: {colorize('Compressed (tar.gz)', Colors.YELLOW)}")
     else:
         print(f"Mode: {colorize('Direct copy (uncompressed)', Colors.YELLOW)}")
     print(f"{colorize('=' * 60, Colors.BLUE)}\n")
 
-    # Verify the backup path exists in the container using ls
-    print(f"{colorize('Verifying backup path exists...', Colors.YELLOW)}")
+    # Verify the container path exists in the container using ls
+    print(f"{colorize('Verifying container path exists...', Colors.YELLOW)}")
     verify_cmd = (
         f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
         f"-c {container_name} "
-        f"-- ls -d /proc/1/root{backup_path} 2>/dev/null"
+        f"-- ls -d /proc/1/root{container_path} 2>/dev/null"
     )
 
     result = run_command(verify_cmd, check=False)
     if not result or result.strip() == "":
         print(
-            f"{colorize('✗ Error:', Colors.RED)} Path {colorize(backup_path, Colors.MAGENTA)} does not exist in container",
+            f"{colorize('✗ Error:', Colors.RED)} Path {colorize(container_path, Colors.MAGENTA)} does not exist in container",
             file=sys.stderr,
         )
 
         # Try to provide helpful context by checking parent directory
-        parent_dir = os.path.dirname(backup_path)
+        parent_dir = os.path.dirname(container_path)
         if parent_dir and parent_dir != "/":
             print(
                 f"{colorize('Checking parent directory:', Colors.YELLOW)} {parent_dir}"
@@ -955,16 +1057,15 @@ def create_backup(
 
     print(f"{colorize('✓', Colors.GREEN)} Path exists: {result.strip()}")
 
-    # Create backup directory if it doesn't exist
-    backup_dir = f"./backups/{namespace}"
-    os.makedirs(backup_dir, exist_ok=True)
-
-    date_string = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # Create parent directories for local path
+    local_dir = os.path.dirname(local_path)
+    if local_dir:
+        os.makedirs(local_dir, exist_ok=True)
 
     if compress:
         # Compressed backup using tar.gz
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
-        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz {backup_path}"
+        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz {container_path}"
 
         cmd = (
             f"{kubectl_base_cmd()} exec {pod_name} "
@@ -984,14 +1085,12 @@ def create_backup(
         # Copy backup to local machine
         print(f"{colorize('Copying backup to local machine...', Colors.YELLOW)}")
 
-        local_filename = f"{backup_dir}/{date_string}_{pod_name}.tar.gz"
-
         cmd = (
             f"{kubectl_base_cmd()} cp "
             f"-n {namespace} "
             f"-c {container_name} "
             f"{pod_name}:/tmp/kdebug-backup.tar.gz "
-            f"{local_filename}"
+            f"{local_path}"
         )
 
         result = run_command(cmd, check=False)
@@ -1001,7 +1100,7 @@ def create_backup(
             return False
 
         print(
-            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_filename, Colors.GREEN)}"
+            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_path, Colors.GREEN)}"
         )
 
         # Cleanup remote backup file
@@ -1012,15 +1111,12 @@ def create_backup(
         # Direct copy without compression
         print(f"{colorize('Copying files directly (uncompressed)...', Colors.YELLOW)}")
 
-        # Determine if backup_path is a file or directory for naming
-        local_filename = f"{backup_dir}/{date_string}_{pod_name}"
-
         cmd = (
             f"{kubectl_base_cmd()} cp "
             f"-n {namespace} "
             f"-c {container_name} "
-            f"{pod_name}:/proc/1/root{backup_path} "
-            f"{local_filename}"
+            f"{pod_name}:/proc/1/root{container_path} "
+            f"{local_path}"
         )
 
         result = run_command(cmd, check=False)
@@ -1030,7 +1126,7 @@ def create_backup(
             return False
 
         print(
-            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_filename, Colors.GREEN)}"
+            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_path, Colors.GREEN)}"
         )
 
     return True
@@ -1111,16 +1207,16 @@ def main():
         description="""Launch ephemeral debug containers in Kubernetes pods.
 
 Usage:
-  kdebug [options]                                  Interactive TUI mode
-  kdebug --pod POD [options]                        Direct pod selection
-  kdebug --controller TYPE/NAME [options]            Controller selection""",
+  kdebug [options]                                  Interactive debug (default)
+  kdebug debug [options]                            Interactive debug session
+  kdebug backup [options]                           Backup files from pod""",
         formatter_class=KdebugHelpFormatter,
         epilog="""Examples:
-  kdebug                                         # Interactive TUI
-  kdebug -n prod --pod api-0                     # Direct pod
-  kdebug --controller sts/db                     # StatefulSet pod
-  kdebug --controller deploy/frontend --cmd sh   # Deployment pod
-  kdebug --pod web-0 --backup /app/config        # Backup files""",
+  kdebug                                                  # Interactive TUI
+  kdebug -n prod --pod api-0                              # Direct pod debug
+  kdebug debug --controller sts/db --cmd sh               # Debug with sh
+  kdebug backup --pod web-0 --container-path /app/config  # Backup files
+  kdebug backup --pod web-0 --container-path /var/data --local-path ./my-backups/{namespace}/{pod}""",
     )
 
     # Version flag
@@ -1128,7 +1224,7 @@ Usage:
         "-V", "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
-    # Target selection arguments
+    # Shared arguments (on main parser so bare `kdebug --pod foo` works)
     target_group = parser.add_argument_group("Target Selection")
     target_group.add_argument(
         "--pod", metavar="NAME", help="Pod name for direct selection"
@@ -1140,7 +1236,6 @@ Usage:
         help="Controller as TYPE/NAME (e.g. sts/myapp, deploy/frontend)",
     )
 
-    # Options arguments
     options_group = parser.add_argument_group("Options")
     options_group.add_argument(
         "-n",
@@ -1162,38 +1257,13 @@ Usage:
     options_group.add_argument(
         "--debug-image",
         metavar="IMAGE",
-        default="ghcr.io/jessegoodier/toolbox:latest",
-        help="Debug image (default: ghcr.io/jessegoodier/toolbox:latest)",
+        default=None,
+        help="Debug image (default: ghcr.io/jessegoodier/toolbox-common:latest)",
     )
-
-    # Operations arguments
-    ops_group = parser.add_argument_group("Operations")
-    ops_group.add_argument(
-        "--cmd",
-        metavar="CMD",
-        default="bash",
-        help="Command to run in debug container (default: bash)",
-    )
-    ops_group.add_argument(
-        "--cd-into",
-        metavar="DIR",
-        help="Change to directory on start (via /proc/1/root)",
-    )
-    ops_group.add_argument(
-        "--backup",
-        metavar="PATH",
-        help="Copy path from pod to local ./backups/ directory",
-    )
-    ops_group.add_argument(
-        "--compress",
-        action="store_true",
-        help="Compress backup as tar.gz (requires --backup)",
-    )
-    ops_group.add_argument(
+    options_group.add_argument(
         "--as-root", action="store_true", help="Run debug container as root (UID 0)"
     )
 
-    # Utility arguments
     util_group = parser.add_argument_group("Utility")
     util_group.add_argument(
         "--debug", action="store_true", help="Show kubectl commands being executed"
@@ -1205,7 +1275,80 @@ Usage:
         help="Output shell completion script",
     )
 
+    # Subcommands
+    subparsers = parser.add_subparsers(dest="command")
+
+    # debug subcommand
+    debug_parser = subparsers.add_parser(
+        "debug",
+        help="Interactive debug session (default)",
+        formatter_class=KdebugHelpFormatter,
+    )
+    debug_parser.add_argument(
+        "--cmd",
+        metavar="CMD",
+        default=None,
+        help="Command to run in debug container (default: bash)",
+    )
+    debug_parser.add_argument(
+        "--cd-into",
+        metavar="DIR",
+        help="Change to directory on start (via /proc/1/root)",
+    )
+
+    # backup subcommand
+    backup_parser = subparsers.add_parser(
+        "backup",
+        help="Backup files from pod",
+        formatter_class=KdebugHelpFormatter,
+    )
+    backup_parser.add_argument(
+        "--container-path",
+        metavar="PATH",
+        required=True,
+        help="Path inside the container to back up",
+    )
+    backup_parser.add_argument(
+        "--local-path",
+        metavar="TEMPLATE",
+        default=None,
+        help=f"Local destination (default: {_BACKUP_LOCAL_PATH_DEFAULT}). "
+        "Supports template variables: {namespace}, {pod}, {date}, {container}",
+    )
+    backup_parser.add_argument(
+        "--compress",
+        action="store_true",
+        help="Compress backup as tar.gz",
+    )
+
     args = parser.parse_args()
+
+    # Default to "debug" when no subcommand is given
+    if args.command is None:
+        args.command = "debug"
+        # Set defaults for debug-specific args that won't be on the namespace
+        if not hasattr(args, "cmd"):
+            args.cmd = None
+        if not hasattr(args, "cd_into"):
+            args.cd_into = None
+
+    # Apply config file defaults (CLI args > config file > hardcoded defaults)
+    config = load_config()
+    args.debug_image = (
+        args.debug_image
+        or config.get("debugImage")
+        or _HARDCODED_DEFAULTS["debugImage"]
+    )
+    if args.command == "debug":
+        args.cmd = args.cmd or config.get("cmd") or _HARDCODED_DEFAULTS["cmd"]
+        args.cd_into = args.cd_into or config.get("cdInto")
+    elif args.command == "backup":
+        args.local_path = (
+            args.local_path
+            or config.get("backupLocalPath")
+            or _BACKUP_LOCAL_PATH_DEFAULT
+        )
+        args.container_path = args.container_path or config.get("backupContainerPath")
 
     # Handle --completions early
     if args.completions:
@@ -1261,7 +1404,6 @@ Usage:
         print(
             f"Found existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
         )
-        # For simplicity, we'll create a new one. In production, you might want to reuse.
         print(f"{colorize('Creating new debug container...', Colors.MAGENTA)}")
 
     # Detect target container UID for the debug container
@@ -1286,15 +1428,17 @@ Usage:
 
     exit_code = 0
     try:
-        # Execute operation
-        if args.backup:
-            # Backup mode
+        if args.command == "backup":
             success = create_backup(
-                pod_name, namespace, debug_container, args.backup, args.compress
+                pod_name,
+                namespace,
+                debug_container,
+                args.container_path,
+                args.local_path,
+                args.compress,
             )
             exit_code = 0 if success else 1
         else:
-            # Interactive mode
             exit_code = exec_interactive(
                 pod_name, namespace, debug_container, args.cmd, cd_into=args.cd_into
             )
@@ -1305,7 +1449,6 @@ Usage:
         print(f"{colorize('✗ Error:', Colors.RED)} {e}", file=sys.stderr)
         exit_code = 1
     finally:
-        # Cleanup - runs after backup/interactive session completes
         cleanup_debug_container(pod_name, namespace, debug_container)
 
     sys.exit(exit_code)
