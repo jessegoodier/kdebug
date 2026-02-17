@@ -81,16 +81,36 @@ _kdebug_get_namespace_from_args() {
     kubectl $kubectl_args config view --minify -o jsonpath='{..namespace}' 2>/dev/null || echo "default"
 }
 
+# Find the subcommand in COMP_WORDS, excluding the word currently being
+# completed (COMP_CWORD) so that "kdebug back<TAB>" still completes
+# the subcommand name instead of treating it as already chosen.
+_kdebug_get_subcommand() {
+    local i
+    for ((i=1; i < ${#COMP_WORDS[@]}; i++)); do
+        [[ $i -eq $COMP_CWORD ]] && continue
+        case "${COMP_WORDS[i]}" in
+            debug|backup) echo "${COMP_WORDS[i]}"; return ;;
+        esac
+    done
+    echo ""
+}
+
 _kdebug() {
     local cur prev words cword
     _init_completion || return
 
-    local opts="--pod --controller -n --namespace --context --kubeconfig
-                --container --debug-image --cmd --cd-into --backup --compress --as-root
+    local subcommand=$(_kdebug_get_subcommand)
+
+    local shared_opts="--pod --controller -n --namespace --context --kubeconfig
+                --container --debug-image --as-root
                 --debug --completions -V --version --help -h"
+
+    local debug_opts="--cmd --cd-into"
+    local backup_opts="--container-path --local-path --compress"
 
     local controller_prefixes="deployment/ deploy/ statefulset/ sts/ daemonset/ ds/"
 
+    # Complete values for options that take arguments
     case "$prev" in
         -n|--namespace)
             COMPREPLY=($(compgen -W "$(_kdebug_get_namespaces)" -- "$cur"))
@@ -110,7 +130,6 @@ _kdebug() {
             return
             ;;
         --controller)
-            # Complete TYPE/NAME - if cur contains /, complete the name part
             if [[ "$cur" == */* ]]; then
                 local ct="${cur%%/*}"
                 local ns=$(_kdebug_get_namespace_from_args)
@@ -122,13 +141,11 @@ _kdebug() {
                 COMPREPLY=($(compgen -W "$completions" -- "$cur"))
             else
                 COMPREPLY=($(compgen -W "$controller_prefixes" -- "$cur"))
-                # Don't add trailing space after type prefix
                 compopt -o nospace
             fi
             return
             ;;
-        --container|--debug-image|--cmd|--cd-into|--backup)
-            # These take arbitrary values, no completion
+        --container|--debug-image|--cmd|--cd-into|--container-path|--local-path)
             return
             ;;
         --completions)
@@ -137,9 +154,26 @@ _kdebug() {
             ;;
     esac
 
+    # Complete flags
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+        case "$subcommand" in
+            debug)
+                COMPREPLY=($(compgen -W "$shared_opts $debug_opts" -- "$cur"))
+                ;;
+            backup)
+                COMPREPLY=($(compgen -W "$shared_opts $backup_opts" -- "$cur"))
+                ;;
+            *)
+                # No subcommand yet — show shared + debug (default) opts
+                COMPREPLY=($(compgen -W "$shared_opts $debug_opts" -- "$cur"))
+                ;;
+        esac
         return
+    fi
+
+    # Complete subcommands and positional words
+    if [[ -z "$subcommand" ]]; then
+        COMPREPLY=($(compgen -W "debug backup" -- "$cur"))
     fi
 }
 

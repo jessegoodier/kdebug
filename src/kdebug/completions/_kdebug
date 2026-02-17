@@ -69,8 +69,8 @@ _kdebug_controllers() {
 }
 
 _kdebug() {
-    local -a args
-    args=(
+    local -a shared_args
+    shared_args=(
         '(-V --version)'{-V,--version}'[Show version and exit]'
         '(-h --help)'{-h,--help}'[Show help message]'
         '--pod[Pod name for direct selection]:pod:_kdebug_pods'
@@ -80,15 +80,46 @@ _kdebug() {
         '--kubeconfig[Path to kubeconfig file]:path:_files'
         '--container[Target container for process namespace sharing]:container:'
         '--debug-image[Debug container image]:image:'
-        '--cmd[Command to run in debug container]:command:'
-        '--cd-into[Change to directory on start]:directory:_files -/'
-        '--backup[Copy path from pod to local backups]:path:'
-        '--compress[Compress backup as tar.gz]'
         '--as-root[Run debug container as root]'
         '--debug[Show kubectl commands being executed]'
         '--completions[Output shell completion script]:shell:(bash zsh fish)'
     )
-    _arguments -s $args
+
+    local -a debug_args
+    debug_args=(
+        '--cmd[Command to run in debug container]:command:'
+        '--cd-into[Change to directory on start]:directory:_files -/'
+    )
+
+    local -a backup_args
+    backup_args=(
+        '--container-path[Path inside the container to back up]:path:'
+        '--local-path[Local destination with template variables]:template:'
+        '--compress[Compress backup as tar.gz]'
+    )
+
+    # Determine which subcommand is active by scanning words
+    local subcmd=""
+    local i
+    for (( i=2; i < CURRENT; i++ )); do
+        case "${words[i]}" in
+            debug|backup) subcmd="${words[i]}"; break ;;
+        esac
+    done
+
+    case "$subcmd" in
+        debug)
+            _arguments -s $shared_args $debug_args
+            ;;
+        backup)
+            _arguments -s $shared_args $backup_args
+            ;;
+        *)
+            # No subcommand yet — offer subcommands + shared args + debug args (default)
+            _arguments -s $shared_args $debug_args \
+                '1:command:(debug backup)'
+            ;;
+    esac
 }
 
 _kdebug "$@"
