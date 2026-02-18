@@ -1067,12 +1067,22 @@ def create_backup(
         # Compressed backup using tar.gz.
         # The debug container accesses the target container's filesystem via
         # /proc/1/root, so use -C to make tar treat that as the root.
-        print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         container_path_rel = container_path.lstrip("/") or "."
         exclude_flags = " ".join(
             f"--exclude={p.lstrip('/')}" for p in (tar_excludes or [])
         )
         exclude_str = f" {exclude_flags}" if exclude_flags else ""
+
+        # Show source size (with excludes applied) before running tar
+        du_result = run_command(
+            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
+            f"-- /bin/sh -c 'du -sh{exclude_str} /proc/1/root/{container_path_rel}'",
+            check=False,
+        )
+        if du_result:
+            print(f"Source size: {colorize(du_result.split()[0], Colors.CYAN)}")
+
+        print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
 
         cmd = (
@@ -1117,6 +1127,14 @@ def create_backup(
 
     else:
         # Direct copy without compression
+        du_result = run_command(
+            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
+            f"-- du -sh /proc/1/root{container_path}",
+            check=False,
+        )
+        if du_result:
+            print(f"Source size: {colorize(du_result.split()[0], Colors.CYAN)}")
+
         print(f"{colorize('Copying files directly (uncompressed)...', Colors.YELLOW)}")
 
         cmd = (
