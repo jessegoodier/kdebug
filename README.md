@@ -4,14 +4,17 @@ Simple utility for launching ephemeral debug containers in Kubernetes pods with 
 
 Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper around `kubectl debug` and `kubectl cp`.
 
+>Notice: the default debug container image is <https://github.com/jessegoodier/toolbox/tree/main/common> and may not be ideal for all users. This is configurable both with an arg and a global config file
+
 ## Features
 
-- 🐚 **Interactive Shell Access** - Launch bash/zsh sessions in debug containers directly to the directory of your choice
-- 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression
-- 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive tui
+- 🐚 **Interactive Shell Access** - Launch bash/sh sessions in debug containers directly to the directory of your choice
+- 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression and configurable local paths
+- 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive TUI
 - 🎯 **Smart Container Selection** - Auto-select containers or choose specific targets
 - 🔐 **Root Access Support** - Run debug containers as root when needed
 - 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
+- ⚙️ **Config File** - Set defaults for debug image, shell command, and backup paths
 
 <details open>
 <summary>Demo of the debug TUI</summary>
@@ -31,24 +34,199 @@ Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper 
 brew install jessegoodier/kdebug/kdebug
 ```
 
-Or
+## Usage
+
+kdebug uses subcommands for its two modes of operation:
+
+```
+kdebug debug [options]          # Interactive debug session (default)
+kdebug backup [options]         # Backup files from pod
+kdebug [options]                # Same as "kdebug debug" for convenience
+```
+
+### Global Options
+
+These shared options work with both subcommands:
 
 ```bash
-# Clone the repository
-git clone https://github.com/jessegoodier/kdebug.git
-cd kdebug
+# Use a specific context
+kdebug --context minikube -n default --pod my-pod
+
+# Use a different kubeconfig file
+kdebug --kubeconfig .kubeconfig -n openclaw
+
+# Combine both options
+kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
 ```
 
-Then make it executable and add to something in your PATH
+### Interactive Mode (TUI)
 
+When no pod or controller is specified, kdebug launches an interactive menu system:
+
+```bash
+# Interactive mode - select from all resources in current namespace
+kdebug
+
+# Interactive mode with specific namespace
+kdebug -n openclaw
 ```
-chmod +x bin/kdebug
-ln -s $(pwd)/bin/kdebug ~/.local/bin/kdebug
+
+### Debug Subcommand
+
+The `debug` subcommand (or naked `kdebug`) launches an interactive shell session in an ephemeral debug container.
+
+```bash
+# Interactive session with direct pod (bare usage = debug)
+kdebug -n kubecost --pod aggregator-0 --container aggregator
+
+# Explicit debug subcommand with custom shell
+kdebug debug -n kubecost --pod aggregator-0 --cmd sh
+
+# Auto-select first container if not specified
+kdebug debug -n kubecost --pod aggregator-0
+
+# Change to a directory on start
+kdebug debug -n kubecost --pod aggregator-0 --cd-into /var/configs
 ```
+
+**Debug-specific options:**
+
+| Option | Description |
+|---|---|
+| `--cmd CMD` | Command to run in debug container (default: `bash`) |
+| `--cd-into DIR` | Change to directory on start (via `/proc/1/root`) |
+
+### Controller-Based Selection
+
+```bash
+# Using StatefulSet (sts)
+kdebug --controller sts/aggregator --container aggregator
+
+# Using Deployment
+kdebug -n myapp --controller deploy/frontend --cmd sh
+
+# Using DaemonSet
+kdebug -n logging --controller ds/fluentd
+```
+
+**Supported Controller Types:**
+- `deployment` or `deploy` - Kubernetes Deployments
+- `statefulset` or `sts` - StatefulSets
+- `daemonset` or `ds` - DaemonSets
+
+### Backup Subcommand
+
+The `backup` subcommand copies files or directories from a pod to your local machine.
+
+```bash
+# Backup a directory (uncompressed)
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs
+
+# Backup with compression
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs --compress
+
+# Backup with a custom local path using template variables
+kdebug backup --pod web-0 --container-path /var/data \
+  --local-path ./my-backups/{namespace}/{pod}
+
+# Backup using controller selection
+kdebug backup --controller deploy/kubecost-local-store \
+  --container-path /var/configs/localBucket_v002
+```
+
+**Backup-specific options:**
+
+| Option | Description |
+|---|---|
+| `--container-path PATH` | **(required)** Path inside the container to back up |
+| `--local-path TEMPLATE` | Local destination (default: `./backups/{namespace}/{date}_{pod}`) |
+| `--compress` | Compress backup as tar.gz |
+| `--tar-exclude PATH` | Exclude a path or pattern from the archive (repeatable) |
+
+**Using `--tar-exclude`:**
+
+Excludes are matched against paths inside the archive and can be repeated. Provide a name or relative pattern — **do not include the full container path prefix**:
+
+```bash
+# Exclude a single subdirectory by name
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs \
+  --compress --tar-exclude waterfowl
+
+# Exclude multiple paths
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs \
+  --compress --tar-exclude waterfowl --tar-exclude tmp --tar-exclude '*.log'
+```
+
+**Template variables for `--local-path`:**
+
+| Variable | Value |
+|---|---|
+| `{namespace}` | Kubernetes namespace |
+| `{pod}` | Pod name |
+| `{date}` | Timestamp (`YYYY-MM-DD_HH-MM-SS`) |
+| `{container}` | Target container name |
+
+### Run as Root
+
+```bash
+# Launch debug container as root user
+kdebug -n myapp --pod frontend-abc123 --as-root
+```
+
+### Verbose Mode
+
+```bash
+# Show all kubectl commands being executed
+kdebug -n myapp --pod frontend-abc123 --verbose
+```
+
+## Config File
+
+kdebug supports a JSON config file at `~/.config/kdebug/kdebug.json` (respects `XDG_CONFIG_HOME`). CLI flags always take priority over config values.
+
+```json
+{
+  "debugImage": "busybox:latest",
+  "cmd": "sh",
+  "cdInto": "/app",
+  "backupContainerPath": "/var/data",
+  "backupLocalPath": "./backups/{namespace}/{_{pod}"
+}
+```
+
+| Key | Description | Default |
+|---|---|---|
+| `debugImage` | Debug container image | `ghcr.io/jessegoodier/toolbox-common:latest` |
+| `cmd` | Shell command for debug sessions | `bash` |
+| `cdInto` | Directory to cd into on start | *(none)* |
+| `backupContainerPath` | Default container path for backups | *(none)* |
+| `backupLocalPath` | Default local path template for backups | `./backups/{namespace}/{date}_{pod}` |
+
+String values support `${ENV_VAR}` expansion:
+
+```json
+{
+  "debugImage": "${MY_DEBUG_IMAGE}",
+  "backupLocalPath": "${HOME}/kdebug-backups/{namespace}/{date}_{pod}"
+}
+```
+
+### Example: Using busybox as debug image
+
+If you don't need the full toolbox image, busybox is a lightweight alternative:
+
+```json
+{
+  "debugImage": "busybox:latest",
+  "cmd": "sh"
+}
+```
+
+Since busybox doesn't include bash, set `cmd` to `sh`. With this config, simply run `kdebug --pod my-pod` and it will use busybox with sh automatically.
 
 ## Shell Completion
 
-kdebug supports tab completion for bash and zsh with dynamic lookups for namespaces, pods, and controller names.
+kdebug supports tab completion for bash and zsh with dynamic lookups for namespaces, pods, controller names, and subcommands.
 
 ### Bash
 
@@ -76,121 +254,14 @@ autoload -Uz compinit && compinit
 
 ### Completion Features
 
-- `kdebug --<TAB>` - Complete all options
+- `kdebug <TAB>` - Complete subcommands (`debug`, `backup`)
+- `kdebug --<TAB>` - Complete shared options
+- `kdebug debug --<TAB>` - Complete debug-specific options
+- `kdebug backup --<TAB>` - Complete backup-specific options
 - `kdebug -n <TAB>` - Complete namespace names from cluster
 - `kdebug --pod <TAB>` - Complete pod names (respects -n flag)
-- `kdebug --controller <TAB>` - Complete controller types
-- `kdebug --controller sts --controller-name <TAB>` - Complete controller names
+- `kdebug --controller <TAB>` - Complete controller types and names
 - `kdebug --context <TAB>` - Complete context names from kubeconfig
-- `kdebug --kubeconfig <TAB>` - Complete file paths
-
-## Usage
-
-### Global Options
-
-kdebug supports kubectl-compatible `--context` and `--kubeconfig` flags to target different clusters:
-
-```bash
-# Use a specific context
-kdebug --context minikube -n default --pod my-pod
-
-# Use a different kubeconfig file
-kdebug --kubeconfig .kubeconfig -n openclaw
-
-# Combine both options
-kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
-```
-
-These options are passed to all kubectl commands, including those used for tab completion.
-
-### Interactive Mode (TUI)
-
-When no pod or controller is specified, kdebug launches an interactive menu system:
-
-```bash
-# Interactive mode - select from all resources in current namespace
-kdebug
-
-# Interactive mode with specific namespace
-kdebug -n openclaw
-```
-
-**TUI Features:**
-- ⬆️⬇️ Use arrow keys to navigate
-- 1️⃣-9️⃣ Press numbers for quick selection
-- ↩️ Press Enter to confirm
-- ❌ Press 'q' to quit
-
-The TUI displays all pods in the namespace with:
-- Color-coded status indicators (Green=Running, Yellow=Pending, etc.)
-- Pod names highlighted for easy identification
-- Real-time status information
-
-### Direct Pod Selection
-
-```bash
-# Interactive session with direct pod
-kdebug -n kubecost --pod aggregator-0 --container aggregator
-
-# Auto-select first container if not specified
-kdebug -n kubecost --pod aggregator-0
-
-# Custom shell command
-kdebug -n kubecost --pod aggregator-0 --cmd sh
-```
-
-### Controller-Based Selection
-
-```bash
-# Using StatefulSet (sts)
-kdebug -n kubecost --controller sts --controller-name aggregator --container aggregator
-
-# Using Deployment
-kdebug -n myapp --controller deployment --controller-name frontend --cmd bash
-
-# Using DaemonSet
-kdebug -n logging --controller ds --controller-name fluentd
-```
-
-**Supported Controller Types:**
-- `deployment` or `deploy` - Kubernetes Deployments
-- `statefulset` or `sts` - StatefulSets
-- `daemonset` or `ds` - DaemonSets
-
-### Advanced Features
-
-#### Change Directory on Start
-
-```bash
-# Start shell in specific directory
-kdebug -n kubecost --pod aggregator-0 --cd-into /var/configs
-```
-
-#### Backup Mode
-
-```bash
-# Backup directory (uncompressed)
-kdebug -n kubecost --pod aggregator-0 --backup /var/configs
-
-# Backup with compression
-kdebug -n kubecost --pod aggregator-0 --backup /var/configs --compress
-
-# Backups are saved to: ./backups/<namespace>/<timestamp>_<pod-name>
-```
-
-#### Run as Root
-
-```bash
-# Launch debug container as root user
-kdebug -n myapp --pod frontend-abc123 --as-root
-```
-
-#### Debug Mode
-
-```bash
-# Show all kubectl commands being executed
-kdebug -n myapp --pod frontend-abc123 --debug
-```
 
 ## Examples
 
@@ -220,7 +291,7 @@ Use ↑/↓ arrows or numbers to select, Enter to confirm, q to quit
 
 ```bash
 # Launch debug container and get bash shell
-kdebug -n kubecost --controller sts --controller-name aggregator --container aggregator
+kdebug -n kubecost --controller sts/aggregator --container aggregator
 
 # Output:
 # ══════════════════════════════════════════════════════════════════════
@@ -230,21 +301,25 @@ kdebug -n kubecost --controller sts --controller-name aggregator --container agg
 # ══════════════════════════════════════════════════════════════════════
 ```
 
-### Example 3: Backup Configuration Files
+### Example 3: Backup with Custom Local Path
 
 ```bash
-# Backup with compression
-kdebug -n production --pod api-server-0 --backup /etc/app/config --compress
+# Backup with compression to a custom path
+kdebug backup -n production --pod api-server-0 \
+  --container-path /etc/app/config \
+  --local-path ./config-backups/{namespace}/{date}_{pod} \
+  --compress
 
 # Output:
 # ══════════════════════════════════════════════════════════════════════
 # Creating backup from pod api-server-0
-# Path: /etc/app/config
+# Container path: /etc/app/config
+# Local path: ./config-backups/production/2024-02-04_10-30-45_api-server-0.tar.gz
 # Mode: Compressed (tar.gz)
 # ══════════════════════════════════════════════════════════════════════
 # ✓ Path exists: /etc/app/config
 # ✓ Backup archive created
-# ✓ Backup saved to: ./backups/production/2024-02-04_10-30-45_api-server-0.tar.gz
+# ✓ Backup saved to: ./config-backups/production/2024-02-04_10-30-45_api-server-0.tar.gz
 ```
 
 ## Color Scheme
@@ -295,7 +370,7 @@ Check:
 - Debug image is accessible from cluster
 - Pod has sufficient resources
 - Network policies allow image pull
-- Use `--debug` flag to see kubectl commands
+- Use `--verbose` flag to see kubectl commands
 
 ## License
 

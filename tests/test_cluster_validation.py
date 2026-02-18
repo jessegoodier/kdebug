@@ -24,7 +24,9 @@ class TestValidateClusterConnection:
 
     @patch("kdebug.cli.subprocess.run")
     def test_valid_connection_returns_none(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0, stdout="namespace/default", stderr="")
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="namespace/default", stderr=""
+        )
         result = cli.validate_cluster_connection("default")
         assert result is None
 
@@ -148,7 +150,9 @@ class TestSelectPodValidation:
     @patch("kdebug.cli.select_pod_interactive", return_value="my-pod")
     @patch("kdebug.cli.validate_cluster_connection", return_value=None)
     @patch("kdebug.cli.get_current_namespace", return_value="default")
-    def test_proceeds_when_validation_passes(self, mock_ns, mock_validate, mock_interactive):
+    def test_proceeds_when_validation_passes(
+        self, mock_ns, mock_validate, mock_interactive
+    ):
         args = self._make_args()
         result = cli.select_pod(args)
         assert result is not None
