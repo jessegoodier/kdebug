@@ -19,18 +19,30 @@ def reset_globals():
 
 
 # run_command call order for compress=True:
-#   0 - path verify (ls -d)       must return non-empty to pass
-#   1 - du size estimate
+#   0 - path verify (ls -d)         must return non-empty to pass
+#   1 - du source size
 #   2 - tar exec
-#   3 - kubectl cp
-#   4 - rm cleanup
-_COMPRESS_SIDE_EFFECTS = ["/proc/1/root/var/configs", "1.2M\t/proc/1/root/var/configs", "", "", ""]
+#   3 - ls -lh archive size
+#   4 - kubectl cp
+#   5 - rm cleanup
+_COMPRESS_SIDE_EFFECTS = [
+    "/proc/1/root/var/configs",  # 0 verify
+    "1.2M\t/proc/1/root/var/configs",  # 1 du
+    "",  # 2 tar
+    "4.2K",  # 3 ls -lh archive size
+    "",  # 4 kubectl cp
+    "",  # 5 rm cleanup
+]
 
 # run_command call order for compress=False:
-#   0 - path verify (ls -d)       must return non-empty to pass
-#   1 - du size estimate
+#   0 - path verify (ls -d)         must return non-empty to pass
+#   1 - du source size
 #   2 - kubectl cp
-_NOCOMPRESS_SIDE_EFFECTS = ["/proc/1/root/var/configs", "1.2M\t/proc/1/root/var/configs", ""]
+_NOCOMPRESS_SIDE_EFFECTS = [
+    "/proc/1/root/var/configs",  # 0 verify
+    "1.2M\t/proc/1/root/var/configs",  # 1 du
+    "",  # 2 kubectl cp
+]
 
 
 def _call_cmd(mock_run, index):
@@ -45,7 +57,9 @@ class TestCreateBackupTarCommand:
 
     def test_no_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup("pod1", "default", "dbg", "/var/configs", "./out", compress=True)
+        cli.create_backup(
+            "pod1", "default", "dbg", "/var/configs", "./out", compress=True
+        )
         tar_cmd = _call_cmd(mock_run, 2)
         assert "tar czf" in tar_cmd
         assert "--exclude" not in tar_cmd
@@ -54,8 +68,13 @@ class TestCreateBackupTarCommand:
     def test_single_exclude(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
         cli.create_backup(
-            "pod1", "default", "dbg", "/var/configs", "./out",
-            compress=True, tar_excludes=["waterfowl"],
+            "pod1",
+            "default",
+            "dbg",
+            "/var/configs",
+            "./out",
+            compress=True,
+            tar_excludes=["waterfowl"],
         )
         tar_cmd = _call_cmd(mock_run, 2)
         assert "--exclude=waterfowl" in tar_cmd
@@ -63,8 +82,13 @@ class TestCreateBackupTarCommand:
     def test_multiple_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
         cli.create_backup(
-            "pod1", "default", "dbg", "/var/configs", "./out",
-            compress=True, tar_excludes=["waterfowl", "tmp", "*.log"],
+            "pod1",
+            "default",
+            "dbg",
+            "/var/configs",
+            "./out",
+            compress=True,
+            tar_excludes=["waterfowl", "tmp", "*.log"],
         )
         tar_cmd = _call_cmd(mock_run, 2)
         assert "--exclude=waterfowl" in tar_cmd
@@ -74,8 +98,13 @@ class TestCreateBackupTarCommand:
     def test_leading_slash_stripped_from_exclude(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
         cli.create_backup(
-            "pod1", "default", "dbg", "/var/configs", "./out",
-            compress=True, tar_excludes=["/var/configs/waterfowl"],
+            "pod1",
+            "default",
+            "dbg",
+            "/var/configs",
+            "./out",
+            compress=True,
+            tar_excludes=["/var/configs/waterfowl"],
         )
         tar_cmd = _call_cmd(mock_run, 2)
         assert "--exclude=var/configs/waterfowl" in tar_cmd
@@ -93,15 +122,27 @@ class TestCreateBackupTarCommand:
     def test_du_called_before_tar_with_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
         cli.create_backup(
-            "pod1", "default", "dbg", "/var/configs", "./out",
-            compress=True, tar_excludes=["waterfowl"],
+            "pod1",
+            "default",
+            "dbg",
+            "/var/configs",
+            "./out",
+            compress=True,
+            tar_excludes=["waterfowl"],
         )
         du_cmd = _call_cmd(mock_run, 1)
         assert "du -sh" in du_cmd
         assert "--exclude=waterfowl" in du_cmd
-        # du runs before tar
         tar_cmd = _call_cmd(mock_run, 2)
         assert "tar czf" in tar_cmd
+
+    def test_archive_size_checked_after_tar(self, mock_run, mock_makedirs):
+        mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
+        cli.create_backup(
+            "pod1", "default", "dbg", "/var/configs", "./out", compress=True
+        )
+        size_cmd = _call_cmd(mock_run, 3)
+        assert "kdebug-backup.tar.gz" in size_cmd
 
     def test_du_called_before_cp_uncompressed(self, mock_run, mock_makedirs):
         mock_run.side_effect = _NOCOMPRESS_SIDE_EFFECTS.copy()
@@ -116,10 +157,14 @@ class TestCreateBackupTarCommand:
     def test_compress_appends_tar_gz_suffix(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
         cli.create_backup(
-            "pod1", "default", "dbg", "/var/configs",
-            "./backups/{namespace}/{pod}", compress=True,
+            "pod1",
+            "default",
+            "dbg",
+            "/var/configs",
+            "./backups/{namespace}/{pod}",
+            compress=True,
         )
-        cp_cmd = _call_cmd(mock_run, 3)
+        cp_cmd = _call_cmd(mock_run, 4)
         assert ".tar.gz" in cp_cmd
 
     def test_cleanup_runs_after_compress(self, mock_run, mock_makedirs):
@@ -127,8 +172,8 @@ class TestCreateBackupTarCommand:
         cli.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=True
         )
-        assert mock_run.call_count == 5  # verify + du + tar + cp + rm
-        cleanup_cmd = _call_cmd(mock_run, 4)
+        assert mock_run.call_count == 6  # verify + du + tar + ls-lh + cp + rm
+        cleanup_cmd = _call_cmd(mock_run, 5)
         assert "rm -f /tmp/kdebug-backup.tar.gz" in cleanup_cmd
 
     def test_compress_false_uses_kubectl_cp_directly(self, mock_run, mock_makedirs):
