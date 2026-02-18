@@ -1070,7 +1070,7 @@ def create_backup(
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         container_path_rel = container_path.lstrip("/") or "."
         tar_args_str = f" {tar_args}" if tar_args else ""
-        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz -C /proc/1/root{tar_args_str} {container_path_rel}"
+        backup_cmd = f"tar czf {tar_args_str} /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel}"
 
         cmd = (
             f"{kubectl_base_cmd()} exec {pod_name} "
@@ -1284,7 +1284,9 @@ Usage:
     # (no explicit "debug" subcommand) can accept them without argparse treating
     # their values as the subcommand positional.
     parser.add_argument("--cmd", metavar="CMD", default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--cd-into", metavar="DIR", default=None, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--cd-into", metavar="DIR", default=None, help=argparse.SUPPRESS
+    )
 
     # Subcommands
     subparsers = parser.add_subparsers(dest="command")
