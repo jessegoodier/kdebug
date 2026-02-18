@@ -106,7 +106,7 @@ _kdebug() {
                 --debug --completions -V --version --help -h"
 
     local debug_opts="--cmd --cd-into"
-    local backup_opts="--container-path --local-path --compress"
+    local backup_opts="--container-path --local-path --compress --tar-exclude"
 
     local controller_prefixes="deployment/ deploy/ statefulset/ sts/ daemonset/ ds/"
 
@@ -145,7 +145,7 @@ _kdebug() {
             fi
             return
             ;;
-        --container|--debug-image|--cmd|--cd-into|--container-path|--local-path)
+        --container|--debug-image|--cmd|--cd-into|--container-path|--local-path|--tar-exclude)
             return
             ;;
         --completions)

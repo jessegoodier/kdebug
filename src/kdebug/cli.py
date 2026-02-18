@@ -991,7 +991,7 @@ def create_backup(
     container_path: str,
     local_path_template: str,
     compress: bool = False,
-    tar_args: str = "",
+    tar_excludes: Optional[List[str]] = None,
 ) -> bool:
     """Create a backup of the specified path and copy it locally."""
     # Validate template before doing anything
@@ -1069,8 +1069,11 @@ def create_backup(
         # /proc/1/root, so use -C to make tar treat that as the root.
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         container_path_rel = container_path.lstrip("/") or "."
-        tar_args_str = f" {tar_args}" if tar_args else ""
-        backup_cmd = f"tar czf {tar_args_str} /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel}"
+        exclude_flags = " ".join(
+            f"--exclude=/proc/1/root/{p.lstrip('/')}" for p in (tar_excludes or [])
+        )
+        exclude_str = f" {exclude_flags}" if exclude_flags else ""
+        backup_cmd = f"tar czf{exclude_str} /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel}"
 
         cmd = (
             f"{kubectl_base_cmd()} exec {pod_name} "
@@ -1335,10 +1338,13 @@ Usage:
         help="Compress backup as tar.gz",
     )
     backup_parser.add_argument(
-        "--tar-args",
-        metavar="ARGS",
-        default="",
-        help="Extra arguments passed to tar when using --compress (e.g. '--exclude=.git')",
+        "--tar-exclude",
+        metavar="PATH",
+        action="append",
+        dest="tar_exclude",
+        default=None,
+        help="Exclude a path when using --compress; may be repeated. "
+        "/proc/1/root is prepended automatically.",
     )
     backup_parser.add_argument("--verbose", action="store_true", help=argparse.SUPPRESS)
 
@@ -1490,7 +1496,7 @@ Usage:
                 args.container_path,
                 args.local_path,
                 args.compress,
-                getattr(args, "tar_args", ""),
+                getattr(args, "tar_exclude", None) or [],
             )
             exit_code = 0 if success else 1
         else:
