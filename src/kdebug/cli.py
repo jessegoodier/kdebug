@@ -1334,15 +1334,25 @@ Usage:
 
     # Apply config file defaults (CLI args > config file > hardcoded defaults)
     config = load_config()
+    from_config = set()  # Track which values came from config file
+
+    if not args.debug_image and config.get("debugImage"):
+        from_config.add("debug_image")
     args.debug_image = (
         args.debug_image
         or config.get("debugImage")
         or _HARDCODED_DEFAULTS["debugImage"]
     )
     if args.command == "debug":
+        if not args.cmd and config.get("cmd"):
+            from_config.add("cmd")
         args.cmd = args.cmd or config.get("cmd") or _HARDCODED_DEFAULTS["cmd"]
+        if not args.cd_into and config.get("cdInto"):
+            from_config.add("cd_into")
         args.cd_into = args.cd_into or config.get("cdInto")
     elif args.command == "backup":
+        if not args.local_path and config.get("backupLocalPath"):
+            from_config.add("local_path")
         args.local_path = (
             args.local_path
             or config.get("backupLocalPath")
@@ -1384,6 +1394,18 @@ Usage:
             f"No --container specified, auto-selecting first non-ephemeral container: {colorize(target_container, Colors.CYAN)}"
         )
 
+    # Build config source annotation
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_path = os.path.join(config_home, "kdebug", "kdebug.json")
+    config_tag = colorize(f"(from {config_path})", Colors.BRIGHT_BLACK)
+
+    def _val(value: str, key: str) -> str:
+        """Format a value with config source annotation if applicable."""
+        text = colorize(value, Colors.CYAN)
+        if key in from_config:
+            text += f" {config_tag}"
+        return text
+
     print(f"\n{colorize('=' * 60, Colors.BLUE)}")
     print(f"{colorize('Namespace:', Colors.BOLD)} {colorize(namespace, Colors.CYAN)}")
     print(f"{colorize('Target Pod:', Colors.BOLD)} {colorize(pod_name, Colors.CYAN)}")
@@ -1391,8 +1413,21 @@ Usage:
         f"{colorize('Target Container:', Colors.BOLD)} {colorize(target_container, Colors.CYAN)}"
     )
     print(
-        f"{colorize('Debug Image:', Colors.BOLD)} {colorize(args.debug_image, Colors.CYAN)}"
+        f"{colorize('Debug Image:', Colors.BOLD)} {_val(args.debug_image, 'debug_image')}"
     )
+    if args.command == "debug":
+        print(f"{colorize('Command:', Colors.BOLD)} {_val(args.cmd, 'cmd')}")
+        if args.cd_into:
+            print(
+                f"{colorize('Directory:', Colors.BOLD)} {_val(args.cd_into, 'cd_into')}"
+            )
+    elif args.command == "backup":
+        print(
+            f"{colorize('Container Path:', Colors.BOLD)} {colorize(args.container_path, Colors.CYAN)}"
+        )
+        print(
+            f"{colorize('Local Path:', Colors.BOLD)} {_val(args.local_path, 'local_path')}"
+        )
     print(f"{colorize('=' * 60, Colors.BLUE)}\n")
 
     # Get existing ephemeral containers
