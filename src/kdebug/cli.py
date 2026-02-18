@@ -1271,7 +1271,7 @@ Usage:
 
     util_group = parser.add_argument_group("Utility")
     util_group.add_argument(
-        "--debug", action="store_true", help="Show kubectl commands being executed"
+        "--verbose", action="store_true", help="Show kubectl commands being executed"
     )
     util_group.add_argument(
         "--completions",
@@ -1306,6 +1306,7 @@ Usage:
         metavar="DIR",
         help="Change to directory on start (via /proc/1/root)",
     )
+    debug_parser.add_argument("--verbose", action="store_true", help=argparse.SUPPRESS)
 
     # backup subcommand
     backup_parser = subparsers.add_parser(
@@ -1337,6 +1338,7 @@ Usage:
         default="",
         help="Extra arguments passed to tar when using --compress (e.g. '--exclude=.git')",
     )
+    backup_parser.add_argument("--verbose", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
@@ -1381,7 +1383,7 @@ Usage:
         sys.exit(0)
 
     # Set debug mode and kubectl global options
-    DEBUG_MODE = args.debug
+    DEBUG_MODE = args.verbose
     global KUBECTL_CONTEXT, KUBECTL_KUBECONFIG
     KUBECTL_CONTEXT = args.context
     KUBECTL_KUBECONFIG = args.kubeconfig
