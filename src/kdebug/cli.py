@@ -1322,6 +1322,38 @@ Usage:
         "--cd-into", metavar="DIR", default=None, help=argparse.SUPPRESS
     )
 
+    # Shared parent parser so subcommands accept target/options args too.
+    # Without this, `kdebug backup --pod foo` fails because argparse routes
+    # args after the subcommand name to the subparser, which doesn't know
+    # about --pod/--controller/etc.
+    _shared = argparse.ArgumentParser(add_help=False, formatter_class=KdebugHelpFormatter)
+    _shared_target = _shared.add_argument_group("Target Selection")
+    _shared_target.add_argument("--pod", metavar="NAME", help="Pod name for direct selection")
+    _shared_target.add_argument(
+        "--controller",
+        type=parse_controller_arg,
+        metavar="TYPE/NAME",
+        help="Controller as TYPE/NAME (e.g. sts/myapp, deploy/frontend)",
+    )
+    _shared_opts = _shared.add_argument_group("Options")
+    _shared_opts.add_argument(
+        "-n", "--namespace", metavar="NS", help="Kubernetes namespace (default: current context)"
+    )
+    _shared_opts.add_argument("--context", metavar="NAME", help="Kubernetes context to use")
+    _shared_opts.add_argument("--kubeconfig", metavar="PATH", help="Path to kubeconfig file")
+    _shared_opts.add_argument(
+        "--container", metavar="NAME", help="Target container for process namespace sharing"
+    )
+    _shared_opts.add_argument(
+        "--debug-image",
+        metavar="IMAGE",
+        default=None,
+        help="Debug image (default: ghcr.io/jessegoodier/toolbox-common:latest)",
+    )
+    _shared_opts.add_argument(
+        "--as-root", action="store_true", help="Run debug container as root (UID 0)"
+    )
+
     # Subcommands
     subparsers = parser.add_subparsers(dest="command")
 
@@ -1330,6 +1362,7 @@ Usage:
         "debug",
         help="Interactive debug session (default)",
         formatter_class=KdebugHelpFormatter,
+        parents=[_shared],
     )
     debug_parser.add_argument(
         "--cmd",
@@ -1349,6 +1382,7 @@ Usage:
         "backup",
         help="Backup files from pod",
         formatter_class=KdebugHelpFormatter,
+        parents=[_shared],
     )
     backup_parser.add_argument(
         "--container-path",
