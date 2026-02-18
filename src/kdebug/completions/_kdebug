@@ -96,7 +96,7 @@ _kdebug() {
         '--container-path[Path inside the container to back up]:path:'
         '--local-path[Local destination with template variables]:template:'
         '--compress[Compress backup as tar.gz]'
-        '*--tar-exclude[Exclude path from compressed backup (repeatable)]:path:_files'
+        '*--tar-exclude[Exclude path or pattern from compressed backup (repeatable)]:pattern:'
     )
 
     # Determine which subcommand is active by scanning words

@@ -141,6 +141,21 @@ kdebug backup --controller deploy/kubecost-local-store \
 | `--container-path PATH` | **(required)** Path inside the container to back up |
 | `--local-path TEMPLATE` | Local destination (default: `./backups/{namespace}/{date}_{pod}`) |
 | `--compress` | Compress backup as tar.gz |
+| `--tar-exclude PATH` | Exclude a path or pattern from the archive (repeatable) |
+
+**Using `--tar-exclude`:**
+
+Excludes are matched against paths inside the archive and can be repeated. Provide a name or relative pattern — **do not include the full container path prefix**:
+
+```bash
+# Exclude a single subdirectory by name
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs \
+  --compress --tar-exclude waterfowl
+
+# Exclude multiple paths
+kdebug backup -n kubecost --pod aggregator-0 --container-path /var/configs \
+  --compress --tar-exclude waterfowl --tar-exclude tmp --tar-exclude '*.log'
+```
 
 **Template variables for `--local-path`:**
 
@@ -158,11 +173,11 @@ kdebug backup --controller deploy/kubecost-local-store \
 kdebug -n myapp --pod frontend-abc123 --as-root
 ```
 
-### Debug Mode
+### Verbose Mode
 
 ```bash
 # Show all kubectl commands being executed
-kdebug -n myapp --pod frontend-abc123 --debug
+kdebug -n myapp --pod frontend-abc123 --verbose
 ```
 
 ## Config File
@@ -355,7 +370,7 @@ Check:
 - Debug image is accessible from cluster
 - Pod has sufficient resources
 - Network policies allow image pull
-- Use `--debug` flag to see kubectl commands
+- Use `--verbose` flag to see kubectl commands
 
 ## License
 
