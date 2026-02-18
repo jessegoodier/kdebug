@@ -1080,7 +1080,9 @@ def create_backup(
             check=False,
         )
         if du_result:
-            print(f"Source size: {colorize(du_result.split()[0], Colors.CYAN)}")
+            print(
+                f"Source size before compression: {colorize(du_result.split()[0], Colors.CYAN)}"
+            )
 
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
@@ -1099,6 +1101,17 @@ def create_backup(
             return False
 
         print(f"{colorize('✓', Colors.GREEN)} Backup archive created")
+
+        # Show archive size
+        size_result = run_command(
+            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
+            f"-- ls -lh /tmp/kdebug-backup.tar.gz 2>/dev/null | awk '{{print $5}}'",
+            check=False,
+        )
+        if size_result:
+            print(
+                f"Archive size to download: {colorize(size_result.strip(), Colors.CYAN)}"
+            )
 
         # Copy backup to local machine
         print(f"{colorize('Copying backup to local machine...', Colors.YELLOW)}")
