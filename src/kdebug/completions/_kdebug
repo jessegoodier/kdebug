@@ -109,10 +109,14 @@ _kdebug() {
 
     case "$subcmd" in
         debug)
-            _arguments -s $shared_args $debug_args
+            _arguments -s \
+                '1:subcommand:(debug backup)' \
+                $shared_args $debug_args
             ;;
         backup)
-            _arguments -s $shared_args $backup_args
+            _arguments -s \
+                '1:subcommand:(debug backup)' \
+                $shared_args $backup_args
             ;;
         *)
             # No subcommand yet — offer subcommands + shared args + debug args (default)

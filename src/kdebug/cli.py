@@ -1275,6 +1275,12 @@ Usage:
         help="Output shell completion script",
     )
 
+    # Debug-specific args also registered on the main parser so that naked usage
+    # (no explicit "debug" subcommand) can accept them without argparse treating
+    # their values as the subcommand positional.
+    parser.add_argument("--cmd", metavar="CMD", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--cd-into", metavar="DIR", default=None, help=argparse.SUPPRESS)
+
     # Subcommands
     subparsers = parser.add_subparsers(dest="command")
 
@@ -1326,11 +1332,9 @@ Usage:
     # Default to "debug" when no subcommand is given
     if args.command is None:
         args.command = "debug"
-        # Set defaults for debug-specific args that won't be on the namespace
-        if not hasattr(args, "cmd"):
-            args.cmd = None
-        if not hasattr(args, "cd_into"):
-            args.cd_into = None
+        # --cmd and --cd-into are also registered on the main parser (with
+        # SUPPRESS) so they're already populated when no subcommand is given.
+        # Nothing extra needed here.
 
     # Apply config file defaults (CLI args > config file > hardcoded defaults)
     config = load_config()
