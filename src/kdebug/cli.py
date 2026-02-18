@@ -1070,10 +1070,10 @@ def create_backup(
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
         container_path_rel = container_path.lstrip("/") or "."
         exclude_flags = " ".join(
-            f"--exclude=/proc/1/root/{p.lstrip('/')}" for p in (tar_excludes or [])
+            f"--exclude={p.lstrip('/')}" for p in (tar_excludes or [])
         )
         exclude_str = f" {exclude_flags}" if exclude_flags else ""
-        backup_cmd = f"tar czf{exclude_str} /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel}"
+        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
 
         cmd = (
             f"{kubectl_base_cmd()} exec {pod_name} "
