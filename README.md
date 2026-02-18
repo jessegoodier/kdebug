@@ -4,6 +4,8 @@ Simple utility for launching ephemeral debug containers in Kubernetes pods with 
 
 Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper around `kubectl debug` and `kubectl cp`.
 
+>Notice: the default debug container image is <https://github.com/jessegoodier/toolbox/tree/main/common> and may not be ideal for all users. This is configurable both with an arg and a global config file
+
 ## Features
 
 - 🐚 **Interactive Shell Access** - Launch bash/sh sessions in debug containers directly to the directory of your choice
@@ -30,21 +32,6 @@ Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper 
 
 ```bash
 brew install jessegoodier/kdebug/kdebug
-```
-
-Or
-
-```bash
-# Clone the repository
-git clone https://github.com/jessegoodier/kdebug.git
-cd kdebug
-```
-
-Then make it executable and add to something in your PATH
-
-```
-chmod +x bin/kdebug
-ln -s $(pwd)/bin/kdebug ~/.local/bin/kdebug
 ```
 
 ## Usage
@@ -84,20 +71,9 @@ kdebug
 kdebug -n openclaw
 ```
 
-**TUI Features:**
-- ⬆️⬇️ Use arrow keys to navigate
-- 1️⃣-9️⃣ Press numbers for quick selection
-- ↩️ Press Enter to confirm
-- ❌ Press 'q' to quit
-
-The TUI displays all pods in the namespace with:
-- Color-coded status indicators (Green=Running, Yellow=Pending, etc.)
-- Pod names highlighted for easy identification
-- Real-time status information
-
 ### Debug Subcommand
 
-The `debug` subcommand (or bare `kdebug`) launches an interactive shell session in an ephemeral debug container.
+The `debug` subcommand (or naked `kdebug`) launches an interactive shell session in an ephemeral debug container.
 
 ```bash
 # Interactive session with direct pod (bare usage = debug)
@@ -199,7 +175,7 @@ kdebug supports a JSON config file at `~/.config/kdebug/kdebug.json` (respects `
   "cmd": "sh",
   "cdInto": "/app",
   "backupContainerPath": "/var/data",
-  "backupLocalPath": "./backups/{namespace}/{date}_{pod}"
+  "backupLocalPath": "./backups/{namespace}/{_{pod}"
 }
 ```
 
