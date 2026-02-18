@@ -32,9 +32,9 @@ Enter
 Sleep 3s
 
 # run the backup command for the kubecost-local-store deployment, which will copy files from the container to the local backup directory
-Type "kdebug backup --container-path /var/configs/localBucket_v002 \"
+Type "kdebug backup --container-path /var/configs --pod kubecost-aggregator-0 \"
 Enter
-Type "  --controller deploy/kubecost-local-store"
+Type "  --compress --tar-exclude waterfowl --tar-exclude values"
 Enter
 Sleep 12s
 

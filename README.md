@@ -190,7 +190,7 @@ kdebug supports a JSON config file at `~/.config/kdebug/kdebug.json` (respects `
   "cmd": "sh",
   "cdInto": "/app",
   "backupContainerPath": "/var/data",
-  "backupLocalPath": "./backups/{namespace}/{_{pod}"
+  "backupLocalPath": "./backups/{namespace}/{date}_{pod}"
 }
 ```
 
