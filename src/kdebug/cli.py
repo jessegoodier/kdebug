@@ -991,6 +991,7 @@ def create_backup(
     container_path: str,
     local_path_template: str,
     compress: bool = False,
+    tar_args: str = "",
 ) -> bool:
     """Create a backup of the specified path and copy it locally."""
     # Validate template before doing anything
@@ -1063,9 +1064,13 @@ def create_backup(
         os.makedirs(local_dir, exist_ok=True)
 
     if compress:
-        # Compressed backup using tar.gz
+        # Compressed backup using tar.gz.
+        # The debug container accesses the target container's filesystem via
+        # /proc/1/root, so use -C to make tar treat that as the root.
         print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
-        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz {container_path}"
+        container_path_rel = container_path.lstrip("/") or "."
+        tar_args_str = f" {tar_args}" if tar_args else ""
+        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz -C /proc/1/root{tar_args_str} {container_path_rel}"
 
         cmd = (
             f"{kubectl_base_cmd()} exec {pod_name} "
@@ -1074,7 +1079,7 @@ def create_backup(
             f"-- /bin/bash -c '{backup_cmd}'"
         )
 
-        result = run_command(cmd, check=False)
+        result = run_command(cmd, check=True)
 
         if result is None:
             print(f"{colorize('✗', Colors.RED)} Backup command failed", file=sys.stderr)
@@ -1093,7 +1098,7 @@ def create_backup(
             f"{local_path}"
         )
 
-        result = run_command(cmd, check=False)
+        result = run_command(cmd, check=True)
 
         if result is None:
             print(f"{colorize('✗', Colors.RED)} Failed to copy backup", file=sys.stderr)
@@ -1326,6 +1331,12 @@ Usage:
         action="store_true",
         help="Compress backup as tar.gz",
     )
+    backup_parser.add_argument(
+        "--tar-args",
+        metavar="ARGS",
+        default="",
+        help="Extra arguments passed to tar when using --compress (e.g. '--exclude=.git')",
+    )
 
     args = parser.parse_args()
 
@@ -1475,6 +1486,7 @@ Usage:
                 args.container_path,
                 args.local_path,
                 args.compress,
+                getattr(args, "tar_args", ""),
             )
             exit_code = 0 if success else 1
         else:
