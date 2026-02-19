@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kdebug import cli
+from kdebug import backup, cli
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +57,7 @@ class TestCreateBackupTarCommand:
 
     def test_no_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=True
         )
         tar_cmd = _call_cmd(mock_run, 2)
@@ -67,7 +67,7 @@ class TestCreateBackupTarCommand:
 
     def test_single_exclude(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1",
             "default",
             "dbg",
@@ -81,7 +81,7 @@ class TestCreateBackupTarCommand:
 
     def test_multiple_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1",
             "default",
             "dbg",
@@ -97,7 +97,7 @@ class TestCreateBackupTarCommand:
 
     def test_leading_slash_stripped_from_exclude(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1",
             "default",
             "dbg",
@@ -112,7 +112,7 @@ class TestCreateBackupTarCommand:
 
     def test_container_path_leading_slash_stripped(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=True
         )
         tar_cmd = _call_cmd(mock_run, 2)
@@ -121,7 +121,7 @@ class TestCreateBackupTarCommand:
 
     def test_du_called_before_tar_with_excludes(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1",
             "default",
             "dbg",
@@ -138,7 +138,7 @@ class TestCreateBackupTarCommand:
 
     def test_archive_size_checked_after_tar(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=True
         )
         size_cmd = _call_cmd(mock_run, 3)
@@ -146,7 +146,7 @@ class TestCreateBackupTarCommand:
 
     def test_du_called_before_cp_uncompressed(self, mock_run, mock_makedirs):
         mock_run.side_effect = _NOCOMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=False
         )
         du_cmd = _call_cmd(mock_run, 1)
@@ -156,7 +156,7 @@ class TestCreateBackupTarCommand:
 
     def test_compress_appends_tar_gz_suffix(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1",
             "default",
             "dbg",
@@ -169,7 +169,7 @@ class TestCreateBackupTarCommand:
 
     def test_cleanup_runs_after_compress(self, mock_run, mock_makedirs):
         mock_run.side_effect = _COMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=True
         )
         assert mock_run.call_count == 6  # verify + du + tar + ls-lh + cp + rm
@@ -178,7 +178,7 @@ class TestCreateBackupTarCommand:
 
     def test_compress_false_uses_kubectl_cp_directly(self, mock_run, mock_makedirs):
         mock_run.side_effect = _NOCOMPRESS_SIDE_EFFECTS.copy()
-        cli.create_backup(
+        backup.create_backup(
             "pod1", "default", "dbg", "/var/configs", "./out", compress=False
         )
         assert mock_run.call_count == 3  # verify + du + cp

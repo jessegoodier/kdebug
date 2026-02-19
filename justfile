@@ -58,3 +58,12 @@ check-completions:
 clean:
     rm -rf dist/ build/ *.egg-info src/*.egg-info .pytest_cache
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+audit-app:
+    # only audit main app
+    uv sync --active
+    uv run scripts/audit_dependencies.py
+audit-dev:
+    # audit dev dependencies
+    uv sync --all-extras --active
+    uv run scripts/audit_dependencies.py
