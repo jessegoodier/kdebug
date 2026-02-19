@@ -22,7 +22,9 @@ def check_security():
     console.print("[bold blue]Checking for security vulnerabilities...[/bold blue]")
 
     # Run pip-audit using uv run
-    result = run_command(["uv", "run", "--with", "pip-audit", "pip-audit", "--format", "json"])
+    result = run_command(
+        ["uv", "run", "--with", "pip-audit", "pip-audit", "--format", "json"]
+    )
 
     if result is None:
         console.print("[bold red]Error: uv or pip-audit not found.[/bold red]")
@@ -70,17 +72,6 @@ def check_outdated():
         return []
 
 
-def run_sync():
-    console.print("\n[bold blue]Running uv sync...[/bold blue]")
-    result = run_command(["uv", "sync"])
-    if result is None:
-        console.print("[bold red]Error: uv not found.[/bold red]")
-        return
-    if result.returncode != 0:
-        console.print(f"[bold red]Error running uv sync:[/bold red] {result.stderr}")
-        return
-
-
 def main():
     console.print(Panel.fit("KPF Dependency & Security Audit", style="bold magenta"))
 
@@ -103,15 +94,20 @@ def main():
             version = pkg.get("version")
             for vuln in pkg.get("vulns", []):
                 table.add_row(
-                    name, version, vuln.get("id"), ", ".join(vuln.get("fix_versions", ["N/A"]))
+                    name,
+                    version,
+                    vuln.get("id"),
+                    ", ".join(vuln.get("fix_versions", ["N/A"])),
                 )
         console.print(table)
-    run_sync()
+
     outdated = check_outdated()
     if not outdated:
         console.print("[bold green]✅ All dependencies are up to date.[/bold green]")
     else:
-        console.print(f"[bold yellow]ℹ️ Found {len(outdated)} outdated dependencies.[/bold yellow]")
+        console.print(
+            f"[bold yellow]ℹ️ Found {len(outdated)} outdated dependencies.[/bold yellow]"
+        )
         table = Table(title="Outdated Dependencies")
         table.add_column("Package", style="cyan")
         table.add_column("Installed", style="magenta")
