@@ -26,7 +26,6 @@ import sys
 import termios
 import time
 import tty
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import rich.box as box
@@ -693,9 +692,6 @@ def check_pod_security_context(pod_name: str, namespace: str) -> Dict:
         pod_security_context = spec.get("securityContext", {})
         run_as_non_root = pod_security_context.get("runAsNonRoot", False)
 
-        # Check if there's a runAsUser set at pod level
-        pod_run_as_user = pod_security_context.get("runAsUser")  # noqa: F841
-
         # Check container-level security contexts
         containers = spec.get("containers", [])
         for container in containers:
@@ -842,316 +838,6 @@ def launch_debug_container(
     return debug_container
 
 
-def exec_interactive(
-    pod_name: str, namespace: str, container_name: str, cmd: str, cd_into: str
-) -> int:
-    """Execute an interactive command in the debug container."""
-    t = Text()
-    t.append("Pod:       ", "bold")
-    t.append(f"{pod_name}\n", "pod")
-    t.append("Container: ", "bold")
-    t.append(f"{container_name}\n", "container")
-    t.append("Command:   ", "bold")
-    t.append(f"{cmd}\n", "info")
-    if cd_into:
-        t.append("Directory: ", "bold")
-        t.append(cd_into, "info")
-    console.print(
-        Panel(
-            t,
-            title="[menu_title]Starting interactive session[/]",
-            border_style="border",
-            box=box.HEAVY,
-            padding=(0, 2),
-        )
-    )
-
-    # If cd_into is specified, wrap command to cd first
-    if cd_into:
-        if cmd == "bash":
-            cmd = f"bash -c 'cd /proc/1/root{cd_into} && exec bash'"
-        elif cmd == "sh":
-            cmd = f"sh -c 'cd /proc/1/root{cd_into} && exec sh'"
-        else:
-            # For custom commands, prepend cd
-            cmd = f"bash -c 'cd /proc/1/root{cd_into} && {cmd}'"
-
-    # Build kubectl command - handle complex commands with shell
-    kubectl_cmd = ["kubectl"]
-    if KUBECTL_KUBECONFIG:
-        kubectl_cmd.extend(["--kubeconfig", KUBECTL_KUBECONFIG])
-    if KUBECTL_CONTEXT:
-        kubectl_cmd.extend(["--context", KUBECTL_CONTEXT])
-    kubectl_cmd.extend(
-        [
-            "exec",
-            "-it",
-            pod_name,
-            "-n",
-            namespace,
-            "-c",
-            container_name,
-            "--",
-        ]
-    )
-
-    # Split the command if it's a simple command, otherwise use sh -c
-    if cmd.startswith("bash -c") or cmd.startswith("sh -c"):
-        # For complex commands, we need to use shell
-        kubectl_cmd.extend(["sh", "-c", cmd])
-    else:
-        # For simple commands, just append
-        kubectl_cmd.append(cmd)
-
-    print_debug_command(" ".join(kubectl_cmd))
-
-    try:
-        # Use subprocess.run without capture_output for interactive TTY
-        result = subprocess.run(kubectl_cmd)
-        return result.returncode
-    except KeyboardInterrupt:
-        console.print("\n\n[info]Interrupted by user[/]")
-        return 130
-    except Exception as e:
-        err_console.print(
-            f"[error]Error executing interactive command:[/] {escape(str(e))}"
-        )
-        return 1
-
-
-_BACKUP_LOCAL_PATH_DEFAULT = "./backups/{namespace}/{date}_{pod}"
-_BACKUP_TEMPLATE_VARS = {"namespace", "pod", "date", "container"}
-
-
-def validate_local_path_template(template: str) -> Optional[str]:
-    """Validate that a local-path template only uses known variables.
-
-    Returns None on success, or an error message string on failure.
-    """
-    unknown = set()
-    for match in re.finditer(r"\{(\w+)\}", template):
-        var = match.group(1)
-        if var not in _BACKUP_TEMPLATE_VARS:
-            unknown.add(var)
-    if unknown:
-        available = ", ".join(f"{{{v}}}" for v in sorted(_BACKUP_TEMPLATE_VARS))
-        return (
-            f"Unknown template variable(s): {', '.join(f'{{{v}}}' for v in sorted(unknown))}. "
-            f"Available variables: {available}"
-        )
-    return None
-
-
-def expand_local_path(
-    template: str, namespace: str, pod_name: str, container_name: str
-) -> str:
-    """Expand a local-path template with actual values."""
-    date_string = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return template.format_map(
-        {
-            "namespace": namespace,
-            "pod": pod_name,
-            "date": date_string,
-            "container": container_name,
-        }
-    )
-
-
-def create_backup(
-    pod_name: str,
-    namespace: str,
-    container_name: str,
-    container_path: str,
-    local_path_template: str,
-    compress: bool = False,
-    tar_excludes: Optional[List[str]] = None,
-) -> bool:
-    """Create a backup of the specified path and copy it locally."""
-    # Validate template before doing anything
-    template_error = validate_local_path_template(local_path_template)
-    if template_error:
-        err_console.print(f"[error]✗ Error:[/] {escape(template_error)}")
-        return False
-
-    # Expand the local path template
-    local_path = expand_local_path(
-        local_path_template, namespace, pod_name, container_name
-    )
-    if compress:
-        local_path += ".tar.gz"
-
-    t = Text()
-    t.append("Pod:            ", "bold")
-    t.append(f"{pod_name}\n", "pod")
-    t.append("Container:      ", "bold")
-    t.append(f"{container_name}\n", "container")
-    t.append("Container path: ", "bold")
-    t.append(f"{container_path}\n", "namespace")
-    t.append("Local path:     ", "bold")
-    t.append(f"{local_path}\n", "namespace")
-    t.append("Mode:           ", "bold")
-    if compress:
-        t.append("Compressed (tar.gz)", "warning")
-    else:
-        t.append("Direct copy (uncompressed)", "warning")
-    console.print(
-        Panel(
-            t,
-            title="[menu_title]Creating backup[/]",
-            border_style="border",
-            box=box.HEAVY,
-            padding=(0, 2),
-        )
-    )
-
-    # Verify the container path exists in the container using ls
-    console.print("[warning]Verifying container path exists...[/]")
-    verify_cmd = (
-        f"{kubectl_base_cmd()} exec {pod_name} "
-        f"-n {namespace} "
-        f"-c {container_name} "
-        f"-- ls -d /proc/1/root{container_path} 2>/dev/null"
-    )
-
-    result = run_command(verify_cmd, check=False)
-    if not result or result.strip() == "":
-        err_console.print(
-            f"[error]✗ Error:[/] Path [namespace]{escape(container_path)}[/] does not exist in container"
-        )
-
-        # Try to provide helpful context by checking parent directory
-        parent_dir = os.path.dirname(container_path)
-        if parent_dir and parent_dir != "/":
-            console.print(
-                f"[warning]Checking parent directory:[/] {escape(parent_dir)}"
-            )
-            parent_cmd = (
-                f"{kubectl_base_cmd()} exec {pod_name} "
-                f"-n {namespace} "
-                f"-c {container_name} "
-                f"-- ls -la /proc/1/root{parent_dir} 2>/dev/null | head -20"
-            )
-            parent_result = run_command(parent_cmd, check=False)
-            if parent_result:
-                console.print(f"[dim]Contents:[/]\n{escape(parent_result)}")
-
-        return False
-
-    console.print(f"[success]✓[/] Path exists: {escape(result.strip())}")
-
-    # Create parent directories for local path
-    local_dir = os.path.dirname(local_path)
-    if local_dir:
-        os.makedirs(local_dir, exist_ok=True)
-
-    if compress:
-        # Compressed backup using tar.gz.
-        # The debug container accesses the target container's filesystem via
-        # /proc/1/root, so use -C to make tar treat that as the root.
-        container_path_rel = container_path.lstrip("/") or "."
-        exclude_flags = " ".join(
-            f"--exclude={p.lstrip('/')}" for p in (tar_excludes or [])
-        )
-        exclude_str = f" {exclude_flags}" if exclude_flags else ""
-
-        # Show source size (with excludes applied) before running tar
-        du_result = run_command(
-            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
-            f"-- /bin/sh -c 'du -sh{exclude_str} /proc/1/root/{container_path_rel}'",
-            check=False,
-        )
-        if du_result:
-            console.print(
-                f"Source size before compression: [info]{escape(du_result.split()[0])}[/]"
-            )
-
-        console.print("[warning]Creating tar.gz archive...[/]")
-        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
-
-        cmd = (
-            f"{kubectl_base_cmd()} exec {pod_name} "
-            f"-n {namespace} "
-            f"-c {container_name} "
-            f"-- /bin/bash -c '{backup_cmd}'"
-        )
-
-        result = run_command(cmd, check=True)
-
-        if result is None:
-            err_console.print("[error]✗[/] Backup command failed")
-            return False
-
-        console.print("[success]✓[/] Backup archive created")
-
-        # Show archive size
-        size_result = run_command(
-            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
-            f"-- ls -lh /tmp/kdebug-backup.tar.gz 2>/dev/null | awk '{{print $5}}'",
-            check=False,
-        )
-        if size_result:
-            console.print(
-                f"Archive size to download: [info]{escape(size_result.strip())}[/]"
-            )
-
-        # Copy backup to local machine
-        console.print("[warning]Copying backup to local machine...[/]")
-
-        cmd = (
-            f"{kubectl_base_cmd()} cp "
-            f"-n {namespace} "
-            f"-c {container_name} "
-            f"{pod_name}:/tmp/kdebug-backup.tar.gz "
-            f"{local_path}"
-        )
-
-        result = run_command(cmd, check=True)
-
-        if result is None:
-            err_console.print("[error]✗[/] Failed to copy backup")
-            return False
-
-        console.print(
-            f"[success]✓[/] Backup saved to: [success]{escape(local_path)}[/]"
-        )
-
-        # Cleanup remote backup file
-        cleanup_cmd = f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} -- rm -f /tmp/kdebug-backup.tar.gz"
-        run_command(cleanup_cmd, check=False)
-
-    else:
-        # Direct copy without compression
-        du_result = run_command(
-            f"{kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
-            f"-- du -sh /proc/1/root{container_path}",
-            check=False,
-        )
-        if du_result:
-            console.print(f"Source size: [info]{escape(du_result.split()[0])}[/]")
-
-        console.print("[warning]Copying files directly (uncompressed)...[/]")
-
-        cmd = (
-            f"{kubectl_base_cmd()} cp "
-            f"-n {namespace} "
-            f"-c {container_name} "
-            f"{pod_name}:/proc/1/root{container_path} "
-            f"{local_path}"
-        )
-
-        result = run_command(cmd, check=False)
-
-        if result is None:
-            err_console.print("[error]✗[/] Failed to copy backup")
-            return False
-
-        console.print(
-            f"[success]✓[/] Backup saved to: [success]{escape(local_path)}[/]"
-        )
-
-    return True
-
-
 def cleanup_debug_container(
     pod_name: str, namespace: str, debug_container: str
 ) -> bool:
@@ -1223,6 +909,8 @@ class KdebugHelpFormatter(argparse.RawDescriptionHelpFormatter):
 def main():
     """Main function to orchestrate the debug container utility."""
     global DEBUG_MODE
+    from kdebug.backup import BACKUP_LOCAL_PATH_DEFAULT, create_backup  # noqa: PLC0415
+    from kdebug.debug import exec_interactive  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
         prog="kdebug",
@@ -1390,7 +1078,7 @@ Usage:
         "--local-path",
         metavar="TEMPLATE",
         default=None,
-        help=f"Local destination (default: {_BACKUP_LOCAL_PATH_DEFAULT}). "
+        help=f"Local destination (default: {BACKUP_LOCAL_PATH_DEFAULT}). "
         "Supports template variables: {namespace}, {pod}, {date}, {container}",
     )
     backup_parser.add_argument(
@@ -1442,7 +1130,7 @@ Usage:
         args.local_path = (
             args.local_path
             or config.get("backupLocalPath")
-            or _BACKUP_LOCAL_PATH_DEFAULT
+            or BACKUP_LOCAL_PATH_DEFAULT
         )
         args.container_path = args.container_path or config.get("backupContainerPath")
 
@@ -1503,6 +1191,7 @@ Usage:
         if args.cd_into:
             summary.add_row("Directory:", _val(args.cd_into, "cd_into"))
     elif args.command == "backup":
+        assert args.container_path is not None  # required=True in backup subparser
         summary.add_row("Container Path:", Text(args.container_path, style="container"))
         summary.add_row("Local Path:", _val(args.local_path, "local_path"))
     console.print(
@@ -1549,6 +1238,7 @@ Usage:
     exit_code = 0
     try:
         if args.command == "backup":
+            assert args.container_path is not None  # required=True in backup subparser
             success = create_backup(
                 pod_name,
                 namespace,
