@@ -1326,9 +1326,13 @@ Usage:
     # Without this, `kdebug backup --pod foo` fails because argparse routes
     # args after the subcommand name to the subparser, which doesn't know
     # about --pod/--controller/etc.
-    _shared = argparse.ArgumentParser(add_help=False, formatter_class=KdebugHelpFormatter)
+    _shared = argparse.ArgumentParser(
+        add_help=False, formatter_class=KdebugHelpFormatter
+    )
     _shared_target = _shared.add_argument_group("Target Selection")
-    _shared_target.add_argument("--pod", metavar="NAME", help="Pod name for direct selection")
+    _shared_target.add_argument(
+        "--pod", metavar="NAME", help="Pod name for direct selection"
+    )
     _shared_target.add_argument(
         "--controller",
         type=parse_controller_arg,
@@ -1337,12 +1341,21 @@ Usage:
     )
     _shared_opts = _shared.add_argument_group("Options")
     _shared_opts.add_argument(
-        "-n", "--namespace", metavar="NS", help="Kubernetes namespace (default: current context)"
+        "-n",
+        "--namespace",
+        metavar="NS",
+        help="Kubernetes namespace (default: current context)",
     )
-    _shared_opts.add_argument("--context", metavar="NAME", help="Kubernetes context to use")
-    _shared_opts.add_argument("--kubeconfig", metavar="PATH", help="Path to kubeconfig file")
     _shared_opts.add_argument(
-        "--container", metavar="NAME", help="Target container for process namespace sharing"
+        "--context", metavar="NAME", help="Kubernetes context to use"
+    )
+    _shared_opts.add_argument(
+        "--kubeconfig", metavar="PATH", help="Path to kubeconfig file"
+    )
+    _shared_opts.add_argument(
+        "--container",
+        metavar="NAME",
+        help="Target container for process namespace sharing",
     )
     _shared_opts.add_argument(
         "--debug-image",
