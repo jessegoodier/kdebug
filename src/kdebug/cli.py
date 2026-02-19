@@ -29,6 +29,15 @@ import tty
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+import rich.box as box
+from rich.console import Console
+from rich.live import Live
+from rich.markup import escape
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich.theme import Theme
+
 from kdebug import __version__
 
 # Global debug flag
@@ -38,40 +47,25 @@ DEBUG_MODE = False
 KUBECTL_CONTEXT = None
 KUBECTL_KUBECONFIG = None
 
-# ANSI Color codes (kubecolor-style)
-
-
-class Colors:
-    # Basic colors
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-
-    # Foreground colors
-    BLACK = "\033[30m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-
-    # Bright foreground colors
-    BRIGHT_BLACK = "\033[90m"
-    BRIGHT_RED = "\033[91m"
-    BRIGHT_GREEN = "\033[92m"
-    BRIGHT_YELLOW = "\033[93m"
-    BRIGHT_BLUE = "\033[94m"
-    BRIGHT_MAGENTA = "\033[95m"
-    BRIGHT_CYAN = "\033[96m"
-    BRIGHT_WHITE = "\033[97m"
-
-
-def colorize(text: str, color: str) -> str:
-    """Wrap text with color codes."""
-    return f"{color}{text}{Colors.RESET}"
-
+_KDEBUG_THEME = Theme(
+    {
+        "success": "bold green",
+        "error": "bold red",
+        "warning": "bold yellow",
+        "info": "cyan",
+        "pod": "cyan",
+        "container": "cyan",
+        "namespace": "magenta",
+        "controller": "yellow",
+        "border": "blue",
+        "dim": "dim white",
+        "config_src": "dim white",
+        "highlight": "bold bright_green",
+        "menu_title": "bold bright_cyan",
+    }
+)
+console = Console(theme=_KDEBUG_THEME, highlight=False)
+err_console = Console(stderr=True, theme=_KDEBUG_THEME, highlight=False)
 
 # Controller type aliases
 CONTROLLER_ALIASES = {
@@ -97,11 +91,9 @@ def kubectl_base_cmd() -> str:
 def print_debug_command(cmd: str):
     """Print command in a nice format when debug mode is enabled."""
     if DEBUG_MODE:
-        print(f"\n{'─' * 60}")
-        print("🔍 DEBUG: Executing command:")
-        print(f"{'─' * 60}")
-        print(f"{cmd}")
-        print(f"{'─' * 60}\n")
+        console.rule("[dim]DEBUG: Executing command[/]", style="dim")
+        console.print(f"  [dim]{escape(cmd)}[/]")
+        console.rule(style="dim")
 
 
 def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optional[str]:
@@ -119,8 +111,8 @@ def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optiona
             )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {cmd}", file=sys.stderr)
-        print(f"Error: {e.stderr}", file=sys.stderr)
+        err_console.print(f"[error]Error running command:[/] {escape(cmd)}")
+        err_console.print(f"[error]Error:[/] {escape(e.stderr)}")
         if check:
             return None
         raise
@@ -158,17 +150,15 @@ def load_config() -> Dict:
         with open(config_path, "r") as f:
             config = json.load(f)
     except json.JSONDecodeError as e:
-        print(
-            f"{colorize('⚠ Warning:', Colors.YELLOW)} Failed to parse {config_path}: {e}",
-            file=sys.stderr,
+        err_console.print(
+            f"[warning]⚠ Warning:[/] Failed to parse {escape(config_path)}: {escape(str(e))}"
         )
         return {}
 
     unknown_keys = set(config.keys()) - _CONFIG_KEYS
     if unknown_keys:
-        print(
-            f"{colorize('⚠ Warning:', Colors.YELLOW)} Unknown config keys in {config_path}: {', '.join(sorted(unknown_keys))}",
-            file=sys.stderr,
+        err_console.print(
+            f"[warning]⚠ Warning:[/] Unknown config keys in {escape(config_path)}: {', '.join(sorted(unknown_keys))}"
         )
 
     # Expand ${VAR} environment variables in string values
@@ -199,17 +189,16 @@ def validate_cluster_connection(namespace: str) -> Optional[str]:
 
 def get_pod_by_name(pod_name: str, namespace: str) -> Optional[Dict]:
     """Get pod information by name."""
-    print(
-        f"Looking up pod {colorize(pod_name, Colors.CYAN)} in namespace {colorize(namespace, Colors.MAGENTA)}..."
+    console.print(
+        f"Looking up pod [pod]{escape(pod_name)}[/] in namespace [namespace]{escape(namespace)}[/]..."
     )
 
     cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
     output = run_command(cmd, check=False)
 
     if not output:
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} Pod '{pod_name}' not found in namespace '{namespace}'",
-            file=sys.stderr,
+        err_console.print(
+            f"[error]✗ Error:[/] Pod '{escape(pod_name)}' not found in namespace '{escape(namespace)}'"
         )
         return None
 
@@ -220,7 +209,7 @@ def get_pod_by_name(pod_name: str, namespace: str) -> Optional[Dict]:
             "namespace": namespace,
         }
     except json.JSONDecodeError as e:
-        print(f"Error parsing pod JSON: {e}", file=sys.stderr)
+        err_console.print(f"[error]Error parsing pod JSON:[/] {escape(str(e))}")
         return None
 
 
@@ -231,14 +220,14 @@ def get_pods_by_controller(
     # Normalize controller type
     controller_kind = CONTROLLER_ALIASES.get(controller_type.lower())
     if not controller_kind:
-        print(f"Error: Unknown controller type '{controller_type}'", file=sys.stderr)
-        print(
-            f"Supported types: {', '.join(CONTROLLER_ALIASES.keys())}", file=sys.stderr
+        err_console.print(
+            f"[error]Error:[/] Unknown controller type '{escape(controller_type)}'"
         )
+        err_console.print(f"Supported types: {', '.join(CONTROLLER_ALIASES.keys())}")
         return []
 
-    print(
-        f"Searching for pods from {colorize(controller_kind, Colors.YELLOW)} {colorize(controller_name, Colors.CYAN)} in namespace {colorize(namespace, Colors.MAGENTA)}..."
+    console.print(
+        f"Searching for pods from [controller]{escape(controller_kind)}[/] [pod]{escape(controller_name)}[/] in namespace [namespace]{escape(namespace)}[/]..."
     )
 
     # Get all pods in the namespace
@@ -246,13 +235,13 @@ def get_pods_by_controller(
     output = run_command(cmd, check=False)
 
     if not output:
-        print("Error: Failed to get pods", file=sys.stderr)
+        err_console.print("[error]Error:[/] Failed to get pods")
         return []
 
     try:
         pods_data = json.loads(output)
     except json.JSONDecodeError as e:
-        print(f"Error parsing pods JSON: {e}", file=sys.stderr)
+        err_console.print(f"[error]Error parsing pods JSON:[/] {escape(str(e))}")
         return []
 
     matching_pods = []
@@ -361,51 +350,38 @@ def read_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def display_menu(
+def _build_menu_renderable(
     title: str, items: List[str], selected_idx: int, show_numbers: bool = True
-):
-    """Display a colorful menu with the selected item highlighted."""
-    # Clear screen
-    print("\033[2J\033[H", end="")
-
-    # Print title
-    print(f"\n{colorize('═' * 70, Colors.BLUE)}")
-    print(f"{colorize(title, Colors.BOLD + Colors.BRIGHT_CYAN)}")
-    print(f"{colorize('═' * 70, Colors.BLUE)}\n")
-
-    # Print items
+) -> Panel:
+    """Build a rich Panel renderable for the interactive menu."""
+    content = Text()
     for idx, item in enumerate(items):
+        number = f"{idx + 1}. " if show_numbers else ""
         if idx == selected_idx:
-            # Highlighted item
-            prefix = "▶ " if show_numbers else "  "
-            number = f"{idx + 1}. " if show_numbers else ""
-            print(
-                f"{colorize(prefix + number + item, Colors.BOLD + Colors.BRIGHT_GREEN)}"
-            )
+            content.append(f"▶ {number}", style="highlight")
+            content.append_text(Text.from_markup(item + "\n", style="highlight"))
         else:
-            # Normal item
-            prefix = "  "
-            number = f"{idx + 1}. " if show_numbers else ""
-            print(f"{colorize(prefix + number + item, Colors.WHITE)}")
-
-    # Print quit option as selectable item
+            content.append(f"  {number}", style="white")
+            content.append_text(Text.from_markup(item + "\n"))
     quit_idx = len(items)
     if selected_idx == quit_idx:
-        print(f"\n{colorize('▶ q. Quit', Colors.BOLD + Colors.BRIGHT_GREEN)}")
+        content.append("\n▶ q. Quit\n", style="highlight")
     else:
-        print(f"\n  {colorize('q.', Colors.WHITE)} {colorize('Quit', Colors.CYAN)}")
-
-    # Print instructions
-    print(f"\n{colorize('─' * 70, Colors.DIM)}")
-    if show_numbers:
-        print(
-            f"{colorize('Use ↑/↓ arrows or numbers to select, Enter to confirm', Colors.BRIGHT_BLACK)}"
-        )
-    else:
-        print(
-            f"{colorize('Use ↑/↓ arrows to select, Enter to confirm', Colors.BRIGHT_BLACK)}"
-        )
-    print(f"{colorize('─' * 70, Colors.DIM)}\n")
+        content.append("\n  q. Quit\n", style="white")
+    instructions = (
+        "Use ↑/↓ arrows or numbers to select, Enter to confirm"
+        if show_numbers
+        else "Use ↑/↓ arrows to select, Enter to confirm"
+    )
+    content.append(f"\n{instructions}", style="config_src")
+    return Panel(
+        content,
+        title=Text.from_markup(f"[menu_title]{title}[/]"),
+        title_align="left",
+        border_style="border",
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
 
 
 def interactive_menu(
@@ -413,38 +389,42 @@ def interactive_menu(
 ) -> Optional[int]:
     """Display an interactive menu and return the selected index."""
     if not items:
-        print(f"{colorize('✗ Error:', Colors.RED)} No items to display")
+        err_console.print("[error]✗ Error:[/] No items to display")
         return None
 
     selected_idx = 0
-    quit_idx = len(items)  # Quit is one position after last item
+    quit_idx = len(items)
 
-    while True:
-        display_menu(title, items, selected_idx, show_numbers)
-
-        key = read_key()
-
-        if key == "up":
-            selected_idx = (selected_idx - 1) % (len(items) + 1)
-        elif key == "down":
-            selected_idx = (selected_idx + 1) % (len(items) + 1)
-        elif key == "\r" or key == "\n":  # Enter
-            if selected_idx == quit_idx:
-                return None  # Quit selected
-            return selected_idx
-        elif key == "q" or key == "Q":
-            return None
-        elif key.isdigit() and show_numbers:
-            num = int(key)
-            if 1 <= num <= len(items):
-                selected_idx = num - 1
-                return selected_idx
+    with Live(
+        _build_menu_renderable(title, items, selected_idx, show_numbers),
+        console=console,
+        auto_refresh=False,
+        transient=True,
+    ) as live:
+        while True:
+            key = read_key()
+            if key == "up":
+                selected_idx = (selected_idx - 1) % (quit_idx + 1)
+            elif key == "down":
+                selected_idx = (selected_idx + 1) % (quit_idx + 1)
+            elif key in ("\r", "\n"):
+                return None if selected_idx == quit_idx else selected_idx
+            elif key in ("q", "Q"):
+                return None
+            elif key.isdigit() and show_numbers:
+                num = int(key)
+                if 1 <= num <= len(items):
+                    return num - 1
+            live.update(
+                _build_menu_renderable(title, items, selected_idx, show_numbers),
+                refresh=True,
+            )
 
 
 def select_controller_interactive(namespace: str) -> Optional[Tuple[str, str]]:
     """Interactive TUI for selecting a controller."""
-    print(f"\n{colorize('Fetching controllers...', Colors.YELLOW)}")
-    controllers = get_all_controllers(namespace)
+    with console.status("[warning]Fetching controllers...[/]", spinner="dots"):
+        controllers = get_all_controllers(namespace)
 
     # Flatten controllers into menu items
     menu_items = []
@@ -452,22 +432,20 @@ def select_controller_interactive(namespace: str) -> Optional[Tuple[str, str]]:
 
     for kind in ["Deployment", "StatefulSet", "DaemonSet"]:
         for ctrl in controllers[kind]:
-            status = (
-                f"{ctrl['ready']}/{ctrl['replicas']}" if ctrl["replicas"] > 0 else "N/A"
-            )
+            ready_style = "success" if ctrl["ready"] == ctrl["replicas"] else "warning"
             menu_items.append(
-                f"{colorize(kind, Colors.YELLOW)} {colorize(ctrl['name'], Colors.CYAN)} "
-                f"({colorize(status, Colors.GREEN if ctrl['ready'] == ctrl['replicas'] else Colors.YELLOW)})"
+                f"[controller]{escape(kind)}[/] [pod]{escape(ctrl['name'])}[/] "
+                f"([{ready_style}]{ctrl['ready']}/{ctrl['replicas']}[/])"
             )
             controller_map.append((ctrl["type"], ctrl["name"]))
 
     if not menu_items:
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} No controllers found in namespace {colorize(namespace, Colors.MAGENTA)}"
+        err_console.print(
+            f"[error]✗ Error:[/] No controllers found in namespace [namespace]{escape(namespace)}[/]"
         )
         return None
 
-    title = f"Select Controller in namespace: {colorize(namespace, Colors.MAGENTA)}"
+    title = f"Select Controller in namespace: [namespace]{escape(namespace)}[/]"
     selected_idx = interactive_menu(title, menu_items)
 
     if selected_idx is None:
@@ -478,25 +456,24 @@ def select_controller_interactive(namespace: str) -> Optional[Tuple[str, str]]:
 
 def select_pod_interactive(namespace: str) -> Optional[str]:
     """Interactive TUI for selecting a pod."""
-    print(f"\n{colorize('Fetching pods...', Colors.YELLOW)}")
-    pods = get_all_pods(namespace)
+    with console.status("[warning]Fetching pods...[/]", spinner="dots"):
+        pods = get_all_pods(namespace)
 
     if not pods:
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} No pods found in namespace {colorize(namespace, Colors.MAGENTA)}"
+        err_console.print(
+            f"[error]✗ Error:[/] No pods found in namespace [namespace]{escape(namespace)}[/]"
         )
         return None
 
     # Create menu items
     menu_items = []
     for pod in pods:
-        status_color = Colors.GREEN if pod["status"] == "Running" else Colors.YELLOW
+        status_style = "success" if pod["status"] == "Running" else "warning"
         menu_items.append(
-            f"{colorize(pod['name'], Colors.CYAN)} "
-            f"({colorize(pod['status'], status_color)})"
+            f"[pod]{escape(pod['name'])}[/] ([{status_style}]{escape(pod['status'])}[/])"
         )
 
-    title = f"Select Pod in namespace: {colorize(namespace, Colors.MAGENTA)}"
+    title = f"Select Pod in namespace: [namespace]{escape(namespace)}[/]"
     selected_idx = interactive_menu(title, menu_items)
 
     if selected_idx is None:
@@ -512,7 +489,7 @@ def select_pod(args) -> Optional[Dict]:
     # Validate cluster connection and namespace before proceeding
     error = validate_cluster_connection(namespace)
     if error:
-        print(f"{colorize('✗ Error:', Colors.RED)} {error}")
+        err_console.print(f"[error]✗ Error:[/] {escape(error)}")
         return None
 
     # Direct pod selection
@@ -525,26 +502,25 @@ def select_pod(args) -> Optional[Dict]:
         pods = get_pods_by_controller(controller_type, controller_name, namespace)
 
         if not pods:
-            print(
-                f"No pods found for {controller_type} '{controller_name}'",
-                file=sys.stderr,
+            err_console.print(
+                f"[error]No pods found for {escape(controller_type)} '{escape(controller_name)}'[/]"
             )
             return None
 
         if len(pods) > 1:
-            print(
-                f"Found {colorize(str(len(pods)), Colors.YELLOW)} pods, selecting first one: {colorize(pods[0]['name'], Colors.CYAN)}"
+            console.print(
+                f"Found [warning]{len(pods)}[/] pods, selecting first one: [pod]{escape(pods[0]['name'])}[/]"
             )
 
         return pods[0]
 
     # Interactive mode - no pod or controller specified
-    print(f"\n{colorize('Starting interactive pod selection...', Colors.CYAN)}")
+    console.print("\n[info]Starting interactive pod selection...[/]")
 
     # Direct pod selection via TUI
     pod_name = select_pod_interactive(namespace)
     if not pod_name:
-        print(f"\n{colorize('Selection cancelled', Colors.CYAN)}")
+        console.print("\n[info]Selection cancelled[/]")
         return None
 
     return {"name": pod_name, "namespace": namespace}
@@ -561,7 +537,7 @@ def get_pod_containers(pod_name: str, namespace: str) -> Dict[str, List[str]]:
     try:
         pod_data = json.loads(output)
     except json.JSONDecodeError as e:
-        print(f"Error parsing pod JSON: {e}", file=sys.stderr)
+        err_console.print(f"[error]Error parsing pod JSON:[/] {escape(str(e))}")
         return {"containers": [], "init_containers": [], "ephemeral_containers": []}
 
     spec = pod_data.get("spec", {})
@@ -601,10 +577,6 @@ def wait_for_container_running(
     pod_name: str, namespace: str, container_name: str, timeout: int = 120
 ) -> bool:
     """Poll until the container is in running state or timeout."""
-    print(
-        f"Waiting for container {colorize(container_name, Colors.CYAN)} to be running..."
-    )
-
     # Known failure states that should immediately fail
     failure_states = {
         "ImagePullBackOff",
@@ -617,96 +589,91 @@ def wait_for_container_running(
 
     start_time = time.time()
     last_reason = None
+    result_success = False
+    failure_reason = None
+    failure_message = None
+    is_terminated = False
+    exit_code_val = None
 
-    while time.time() - start_time < timeout:
-        cmd = f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
-        output = run_command(cmd)
-
-        if not output:
-            time.sleep(2)
-            continue
-
-        try:
-            pod_data = json.loads(output)
-            ephemeral_statuses = pod_data.get("status", {}).get(
-                "ephemeralContainerStatuses", []
+    with console.status(
+        f"Waiting for [pod]{escape(container_name)}[/] to start...", spinner="dots"
+    ) as status:
+        while time.time() - start_time < timeout:
+            output = run_command(
+                f"{kubectl_base_cmd()} get pod {pod_name} -n {namespace} -o json"
             )
+            if not output:
+                time.sleep(2)
+                continue
 
-            for status in ephemeral_statuses:
-                if status.get("name") == container_name:
-                    state = status.get("state", {})
+            try:
+                pod_data = json.loads(output)
+                for s in pod_data.get("status", {}).get(
+                    "ephemeralContainerStatuses", []
+                ):
+                    if s.get("name") != container_name:
+                        continue
+                    state = s.get("state", {})
 
-                    # Check if running
                     if "running" in state:
-                        print(
-                            f"{colorize('✓', Colors.GREEN)} Container {colorize(container_name, Colors.CYAN)} is {colorize('running', Colors.GREEN)}"
-                        )
-                        return True
-
-                    # Check if waiting
+                        result_success = True
+                        break
                     elif "waiting" in state:
-                        waiting_info = state.get("waiting", {})
-                        reason = waiting_info.get("reason", "Unknown")
-                        message = waiting_info.get("message", "")
-
-                        # Check for immediate failure states
-                        if reason in failure_states:
-                            print(
-                                f"{colorize('✗', Colors.RED)} Container failed to start: {colorize(reason, Colors.RED)}",
-                                file=sys.stderr,
+                        r = state["waiting"].get("reason", "Unknown")
+                        if r in failure_states:
+                            failure_reason = r
+                            failure_message = state["waiting"].get("message", "")
+                            break
+                        if r != last_reason:
+                            status.update(
+                                f"Container [pod]{escape(container_name)}[/]: [warning]{escape(r)}[/]"
                             )
-                            if message:
-                                print(
-                                    f"{colorize('Error details:', Colors.RED)} {message}",
-                                    file=sys.stderr,
-                                )
-                            return False
-
-                        # Show progress for transient states
-                        if reason != last_reason:
-                            print(
-                                f"Container status: {colorize(reason, Colors.YELLOW)}"
-                            )
-                            last_reason = reason
-
-                    # Check if terminated
+                            last_reason = r
                     elif "terminated" in state:
-                        terminated_info = state.get("terminated", {})
-                        reason = terminated_info.get("reason", "Unknown")
-                        exit_code = terminated_info.get("exitCode", "N/A")
-                        message = terminated_info.get("message", "")
-
-                        print(
-                            f"{colorize('✗', Colors.RED)} Container terminated: {colorize(reason, Colors.RED)} (exit code: {colorize(str(exit_code), Colors.RED)})",
-                            file=sys.stderr,
+                        t = state["terminated"]
+                        failure_reason = t.get("reason", "Unknown")
+                        failure_message = t.get("message", "")
+                        is_terminated = True
+                        exit_code_val = t.get("exitCode", "N/A")
+                        break
+                    elif last_reason != "NoState":
+                        status.update(
+                            f"Container [pod]{escape(container_name)}[/]: Initializing..."
                         )
-                        if message:
-                            print(
-                                f"{colorize('Error details:', Colors.RED)} {message}",
-                                file=sys.stderr,
-                            )
-                        return False
+                        last_reason = "NoState"
 
-                    # Container exists but no state info yet
-                    else:
-                        if last_reason != "NoState":
-                            print("Container status: Initializing...")
-                            last_reason = "NoState"
+            except json.JSONDecodeError as e:
+                err_console.print(
+                    f"[warning]Warning:[/] Failed to parse pod JSON: {escape(str(e))}"
+                )
 
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse pod JSON: {e}", file=sys.stderr)
+            if result_success or failure_reason:
+                break
+            time.sleep(2)
 
-        time.sleep(2)
-
-    print(
-        f"{colorize('✗', Colors.RED)} Timeout ({timeout}s) waiting for container to start",
-        file=sys.stderr,
+    if result_success:
+        console.print(
+            f"[success]✓[/] Container [pod]{escape(container_name)}[/] is [success]running[/]"
+        )
+        return True
+    if failure_reason:
+        if is_terminated:
+            err_console.print(
+                f"[error]✗[/] Container terminated: [error]{escape(failure_reason)}[/] "
+                f"(exit code: [error]{exit_code_val}[/])"
+            )
+        else:
+            err_console.print(
+                f"[error]✗[/] Container failed to start: [error]{escape(failure_reason)}[/]"
+            )
+        if failure_message:
+            err_console.print(f"[error]Error details:[/] {escape(failure_message)}")
+        return False
+    err_console.print(
+        f"[error]✗[/] Timeout ({timeout}s) waiting for container to start"
     )
     if last_reason:
-        print(
-            f"Last known status: {colorize(last_reason, Colors.YELLOW)}",
-            file=sys.stderr,
-        )
+        err_console.print(f"Last known status: [warning]{escape(last_reason)}[/]")
     return False
 
 
@@ -793,30 +760,23 @@ def launch_debug_container(
     run_as_user: Optional[int] = None,
 ) -> Optional[str]:
     """Launch a debug container attached to the pod and return its name."""
-    print(f"Launching debug container for pod {colorize(pod_name, Colors.CYAN)}...")
+    console.print(f"Launching debug container for pod [pod]{escape(pod_name)}[/]...")
 
     # Check if running as root is possible when requested
     if as_root:
         security_check = check_pod_security_context(pod_name, namespace)
         if not security_check["can_run_as_root"]:
-            print(
-                f"{colorize('⚠ Warning:', Colors.YELLOW)} {security_check['reason']}",
-                file=sys.stderr,
+            err_console.print(
+                f"[warning]⚠ Warning:[/] {escape(security_check['reason'])}"
             )
-            print(
-                f"{colorize('The --as-root flag will likely fail.', Colors.YELLOW)} Proceeding anyway...",
-                file=sys.stderr,
+            err_console.print(
+                "[warning]The --as-root flag will likely fail.[/] Proceeding anyway..."
             )
-            print(f"{colorize('Tip:', Colors.CYAN)} Try without --as-root flag\n")
+            console.print("[info]Tip:[/] Try without --as-root flag\n")
     elif run_as_user is not None:
-        print(
-            f"Running as UID {colorize(str(run_as_user), Colors.CYAN)} (matching target container)"
+        console.print(
+            f"Running as UID [pod]{run_as_user}[/] (matching target container)"
         )
-
-    # if existing_containers:
-    #     print(
-    #         f"Existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
-    #     )
 
     # Build kubectl debug command
     cmd_parts = [
@@ -864,19 +824,19 @@ def launch_debug_container(
     ]
 
     if not new_container_names:
-        print(
-            "Error: Could not identify newly created debug container", file=sys.stderr
+        err_console.print(
+            "[error]Error:[/] Could not identify newly created debug container"
         )
         return None
 
     debug_container = new_container_names[0]
-    print(
-        f"{colorize('✓', Colors.GREEN)} Created debug container: {colorize(debug_container, Colors.CYAN)}"
+    console.print(
+        f"[success]✓[/] Created debug container: [pod]{escape(debug_container)}[/]"
     )
 
     # Wait for the container to actually be running
     if not wait_for_container_running(pod_name, namespace, debug_container):
-        print("Error: Debug container failed to start", file=sys.stderr)
+        err_console.print("[error]Error:[/] Debug container failed to start")
         return None
 
     return debug_container
@@ -886,14 +846,25 @@ def exec_interactive(
     pod_name: str, namespace: str, container_name: str, cmd: str, cd_into: str
 ) -> int:
     """Execute an interactive command in the debug container."""
-    print(f"\n{colorize('=' * 60, Colors.BLUE)}")
-    print(f"{colorize('Starting interactive session', Colors.BOLD)} in:")
-    print(f"Pod: {colorize(pod_name, Colors.CYAN)}")
-    print(f"Container: {colorize(container_name, Colors.CYAN)}")
-    print(f"Command: {colorize(cmd, Colors.CYAN)}")
+    t = Text()
+    t.append("Pod:       ", "bold")
+    t.append(f"{pod_name}\n", "pod")
+    t.append("Container: ", "bold")
+    t.append(f"{container_name}\n", "container")
+    t.append("Command:   ", "bold")
+    t.append(f"{cmd}\n", "info")
     if cd_into:
-        print(f"Directory: {colorize(cd_into, Colors.CYAN)}")
-    print(f"{colorize('=' * 60, Colors.BLUE)}\n")
+        t.append("Directory: ", "bold")
+        t.append(cd_into, "info")
+    console.print(
+        Panel(
+            t,
+            title="[menu_title]Starting interactive session[/]",
+            border_style="border",
+            box=box.HEAVY,
+            padding=(0, 2),
+        )
+    )
 
     # If cd_into is specified, wrap command to cd first
     if cd_into:
@@ -939,10 +910,12 @@ def exec_interactive(
         result = subprocess.run(kubectl_cmd)
         return result.returncode
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user")
+        console.print("\n\n[info]Interrupted by user[/]")
         return 130
     except Exception as e:
-        print(f"Error executing interactive command: {e}", file=sys.stderr)
+        err_console.print(
+            f"[error]Error executing interactive command:[/] {escape(str(e))}"
+        )
         return 1
 
 
@@ -997,10 +970,7 @@ def create_backup(
     # Validate template before doing anything
     template_error = validate_local_path_template(local_path_template)
     if template_error:
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} {template_error}",
-            file=sys.stderr,
-        )
+        err_console.print(f"[error]✗ Error:[/] {escape(template_error)}")
         return False
 
     # Expand the local path template
@@ -1010,20 +980,32 @@ def create_backup(
     if compress:
         local_path += ".tar.gz"
 
-    print(f"\n{colorize('=' * 60, Colors.BLUE)}")
-    print(
-        f"{colorize('Creating backup', Colors.BOLD)} from pod {colorize(pod_name, Colors.CYAN)}"
-    )
-    print(f"Container path: {colorize(container_path, Colors.MAGENTA)}")
-    print(f"Local path: {colorize(local_path, Colors.MAGENTA)}")
+    t = Text()
+    t.append("Pod:            ", "bold")
+    t.append(f"{pod_name}\n", "pod")
+    t.append("Container:      ", "bold")
+    t.append(f"{container_name}\n", "container")
+    t.append("Container path: ", "bold")
+    t.append(f"{container_path}\n", "namespace")
+    t.append("Local path:     ", "bold")
+    t.append(f"{local_path}\n", "namespace")
+    t.append("Mode:           ", "bold")
     if compress:
-        print(f"Mode: {colorize('Compressed (tar.gz)', Colors.YELLOW)}")
+        t.append("Compressed (tar.gz)", "warning")
     else:
-        print(f"Mode: {colorize('Direct copy (uncompressed)', Colors.YELLOW)}")
-    print(f"{colorize('=' * 60, Colors.BLUE)}\n")
+        t.append("Direct copy (uncompressed)", "warning")
+    console.print(
+        Panel(
+            t,
+            title="[menu_title]Creating backup[/]",
+            border_style="border",
+            box=box.HEAVY,
+            padding=(0, 2),
+        )
+    )
 
     # Verify the container path exists in the container using ls
-    print(f"{colorize('Verifying container path exists...', Colors.YELLOW)}")
+    console.print("[warning]Verifying container path exists...[/]")
     verify_cmd = (
         f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
@@ -1033,16 +1015,15 @@ def create_backup(
 
     result = run_command(verify_cmd, check=False)
     if not result or result.strip() == "":
-        print(
-            f"{colorize('✗ Error:', Colors.RED)} Path {colorize(container_path, Colors.MAGENTA)} does not exist in container",
-            file=sys.stderr,
+        err_console.print(
+            f"[error]✗ Error:[/] Path [namespace]{escape(container_path)}[/] does not exist in container"
         )
 
         # Try to provide helpful context by checking parent directory
         parent_dir = os.path.dirname(container_path)
         if parent_dir and parent_dir != "/":
-            print(
-                f"{colorize('Checking parent directory:', Colors.YELLOW)} {parent_dir}"
+            console.print(
+                f"[warning]Checking parent directory:[/] {escape(parent_dir)}"
             )
             parent_cmd = (
                 f"{kubectl_base_cmd()} exec {pod_name} "
@@ -1052,11 +1033,11 @@ def create_backup(
             )
             parent_result = run_command(parent_cmd, check=False)
             if parent_result:
-                print(f"{colorize('Contents:', Colors.BRIGHT_BLACK)}\n{parent_result}")
+                console.print(f"[dim]Contents:[/]\n{escape(parent_result)}")
 
         return False
 
-    print(f"{colorize('✓', Colors.GREEN)} Path exists: {result.strip()}")
+    console.print(f"[success]✓[/] Path exists: {escape(result.strip())}")
 
     # Create parent directories for local path
     local_dir = os.path.dirname(local_path)
@@ -1080,11 +1061,11 @@ def create_backup(
             check=False,
         )
         if du_result:
-            print(
-                f"Source size before compression: {colorize(du_result.split()[0], Colors.CYAN)}"
+            console.print(
+                f"Source size before compression: [info]{escape(du_result.split()[0])}[/]"
             )
 
-        print(f"{colorize('Creating tar.gz archive...', Colors.YELLOW)}")
+        console.print("[warning]Creating tar.gz archive...[/]")
         backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
 
         cmd = (
@@ -1097,10 +1078,10 @@ def create_backup(
         result = run_command(cmd, check=True)
 
         if result is None:
-            print(f"{colorize('✗', Colors.RED)} Backup command failed", file=sys.stderr)
+            err_console.print("[error]✗[/] Backup command failed")
             return False
 
-        print(f"{colorize('✓', Colors.GREEN)} Backup archive created")
+        console.print("[success]✓[/] Backup archive created")
 
         # Show archive size
         size_result = run_command(
@@ -1109,12 +1090,12 @@ def create_backup(
             check=False,
         )
         if size_result:
-            print(
-                f"Archive size to download: {colorize(size_result.strip(), Colors.CYAN)}"
+            console.print(
+                f"Archive size to download: [info]{escape(size_result.strip())}[/]"
             )
 
         # Copy backup to local machine
-        print(f"{colorize('Copying backup to local machine...', Colors.YELLOW)}")
+        console.print("[warning]Copying backup to local machine...[/]")
 
         cmd = (
             f"{kubectl_base_cmd()} cp "
@@ -1127,11 +1108,11 @@ def create_backup(
         result = run_command(cmd, check=True)
 
         if result is None:
-            print(f"{colorize('✗', Colors.RED)} Failed to copy backup", file=sys.stderr)
+            err_console.print("[error]✗[/] Failed to copy backup")
             return False
 
-        print(
-            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_path, Colors.GREEN)}"
+        console.print(
+            f"[success]✓[/] Backup saved to: [success]{escape(local_path)}[/]"
         )
 
         # Cleanup remote backup file
@@ -1146,9 +1127,9 @@ def create_backup(
             check=False,
         )
         if du_result:
-            print(f"Source size: {colorize(du_result.split()[0], Colors.CYAN)}")
+            console.print(f"Source size: [info]{escape(du_result.split()[0])}[/]")
 
-        print(f"{colorize('Copying files directly (uncompressed)...', Colors.YELLOW)}")
+        console.print("[warning]Copying files directly (uncompressed)...[/]")
 
         cmd = (
             f"{kubectl_base_cmd()} cp "
@@ -1161,11 +1142,11 @@ def create_backup(
         result = run_command(cmd, check=False)
 
         if result is None:
-            print(f"{colorize('✗', Colors.RED)} Failed to copy backup", file=sys.stderr)
+            err_console.print("[error]✗[/] Failed to copy backup")
             return False
 
-        print(
-            f"{colorize('✓', Colors.GREEN)} Backup saved to: {colorize(local_path, Colors.GREEN)}"
+        console.print(
+            f"[success]✓[/] Backup saved to: [success]{escape(local_path)}[/]"
         )
 
     return True
@@ -1175,7 +1156,7 @@ def cleanup_debug_container(
     pod_name: str, namespace: str, debug_container: str
 ) -> bool:
     """Attempt to clean up the debug container."""
-    print(f"\n{colorize('Cleaning up debug container...', Colors.YELLOW)}")
+    console.print("\n[warning]Cleaning up debug container...[/]")
 
     # Kill the sleep process in the debug container
     cmd = (
@@ -1187,7 +1168,7 @@ def cleanup_debug_container(
 
     run_command(cmd, check=False)
 
-    print(f"{colorize('✓', Colors.GREEN)} Debug container cleanup initiated")
+    console.print("[success]✓[/] Debug container cleanup initiated")
     return True
 
 
@@ -1196,7 +1177,7 @@ def _output_completion_script(shell: str) -> None:
     files = {"bash": "kdebug.bash", "zsh": "_kdebug", "fish": "kdebug.fish"}
     filename = files.get(shell)
     if not filename:
-        print(f"Unknown shell: {shell}", file=sys.stderr)
+        err_console.print(f"[error]Unknown shell:[/] {escape(shell)}")
         sys.exit(1)
 
     try:
@@ -1204,7 +1185,9 @@ def _output_completion_script(shell: str) -> None:
         script = (completions_pkg / filename).read_text()
         print(script)
     except Exception as e:
-        print(f"Error reading completion script: {e}", file=sys.stderr)
+        err_console.print(
+            f"[error]Error reading completion script:[/] {escape(str(e))}"
+        )
         sys.exit(1)
 
 
@@ -1489,49 +1472,48 @@ Usage:
         regular_containers = container_info["containers"]
 
         if not regular_containers:
-            print("Error: No regular containers found in pod", file=sys.stderr)
+            err_console.print("[error]Error:[/] No regular containers found in pod")
             sys.exit(1)
 
         target_container = regular_containers[0]
-        print(
-            f"No --container specified, auto-selecting first non-ephemeral container: {colorize(target_container, Colors.CYAN)}"
+        console.print(
+            f"No --container specified, auto-selecting first non-ephemeral container: [pod]{escape(target_container)}[/]"
         )
 
-    # Build config source annotation
+    # Build config source annotation path
     config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
     config_path = os.path.join(config_home, "kdebug", "kdebug.json")
-    config_tag = colorize(f"(from {config_path})", Colors.BRIGHT_BLACK)
 
-    def _val(value: str, key: str) -> str:
+    def _val(value: str, key: str) -> Text:
         """Format a value with config source annotation if applicable."""
-        text = colorize(value, Colors.CYAN)
+        t = Text(str(value), style="pod")
         if key in from_config:
-            text += f" {config_tag}"
-        return text
+            t.append(f" (from {config_path})", style="config_src")
+        return t
 
-    print(f"\n{colorize('=' * 60, Colors.BLUE)}")
-    print(f"{colorize('Namespace:', Colors.BOLD)} {colorize(namespace, Colors.CYAN)}")
-    print(f"{colorize('Target Pod:', Colors.BOLD)} {colorize(pod_name, Colors.CYAN)}")
-    print(
-        f"{colorize('Target Container:', Colors.BOLD)} {colorize(target_container, Colors.CYAN)}"
-    )
-    print(
-        f"{colorize('Debug Image:', Colors.BOLD)} {_val(args.debug_image, 'debug_image')}"
-    )
+    summary = Table.grid(padding=(0, 1))
+    summary.add_column(style="bold", no_wrap=True)
+    summary.add_column()
+    summary.add_row("Namespace:", Text(namespace, style="namespace"))
+    summary.add_row("Target Pod:", Text(pod_name, style="pod"))
+    summary.add_row("Target Container:", Text(target_container, style="container"))
+    summary.add_row("Debug Image:", _val(args.debug_image, "debug_image"))
     if args.command == "debug":
-        print(f"{colorize('Command:', Colors.BOLD)} {_val(args.cmd, 'cmd')}")
+        summary.add_row("Command:", _val(args.cmd, "cmd"))
         if args.cd_into:
-            print(
-                f"{colorize('Directory:', Colors.BOLD)} {_val(args.cd_into, 'cd_into')}"
-            )
+            summary.add_row("Directory:", _val(args.cd_into, "cd_into"))
     elif args.command == "backup":
-        print(
-            f"{colorize('Container Path:', Colors.BOLD)} {colorize(args.container_path, Colors.CYAN)}"
+        summary.add_row("Container Path:", Text(args.container_path, style="container"))
+        summary.add_row("Local Path:", _val(args.local_path, "local_path"))
+    console.print(
+        Panel(
+            summary,
+            title="[menu_title]Configuration[/]",
+            border_style="border",
+            box=box.ROUNDED,
+            padding=(0, 1),
         )
-        print(
-            f"{colorize('Local Path:', Colors.BOLD)} {_val(args.local_path, 'local_path')}"
-        )
-    print(f"{colorize('=' * 60, Colors.BLUE)}\n")
+    )
 
     # Get existing ephemeral containers
     existing_containers = get_existing_ephemeral_containers(pod_name, namespace)
@@ -1539,10 +1521,10 @@ Usage:
     # Check if we can reuse an existing debug container
     debug_container = None
     if existing_containers:
-        print(
-            f"Found existing ephemeral containers: {colorize(', '.join(existing_containers), Colors.BRIGHT_BLACK)}"
+        console.print(
+            f"Found existing ephemeral containers: [dim]{escape(', '.join(existing_containers))}[/]"
         )
-        print(f"{colorize('Creating new debug container...', Colors.MAGENTA)}")
+        console.print("[namespace]Creating new debug container...[/]")
 
     # Detect target container UID for the debug container
     run_as_user = None
@@ -1561,7 +1543,7 @@ Usage:
     )
 
     if not debug_container:
-        print("Failed to launch debug container", file=sys.stderr)
+        err_console.print("[error]Failed to launch debug container[/]")
         sys.exit(1)
 
     exit_code = 0
@@ -1582,10 +1564,10 @@ Usage:
                 pod_name, namespace, debug_container, args.cmd, cd_into=args.cd_into
             )
     except KeyboardInterrupt:
-        print(f"\n{colorize('Interrupted by user', Colors.YELLOW)}")
+        console.print("\n[warning]Interrupted by user[/]")
         exit_code = 130
     except Exception as e:
-        print(f"{colorize('✗ Error:', Colors.RED)} {e}", file=sys.stderr)
+        err_console.print(f"[error]✗ Error:[/] {escape(str(e))}")
         exit_code = 1
     finally:
         cleanup_debug_container(pod_name, namespace, debug_container)

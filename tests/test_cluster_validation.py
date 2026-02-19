@@ -129,7 +129,7 @@ class TestSelectPodValidation:
         result = cli.select_pod(args)
         assert result is None
         captured = capsys.readouterr()
-        assert "context was not found" in captured.out
+        assert "context was not found" in captured.err
 
     @patch("kdebug.cli.validate_cluster_connection")
     @patch("kdebug.cli.get_current_namespace", return_value="default")
