@@ -914,19 +914,19 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="kdebug",
-        description="""Launch ephemeral debug containers in Kubernetes pods.
+        description="""TUI for Kubernetes Debug Containers.
+https://github.com/jessegoodier/kdebug
 
 Usage:
-  kdebug [options]                                  Interactive debug (default)
-  kdebug debug [options]                            Interactive debug session
-  kdebug backup [options]                           Backup files from pod""",
+  kdebug [options]   Interactive debug (default)
+  kdebug debug -h    Show debug options
+  kdebug backup -h   Show backup options""",
         formatter_class=KdebugHelpFormatter,
         epilog="""Examples:
   kdebug                                                  # Interactive TUI
-  kdebug -n prod --pod api-0                              # Direct pod debug
-  kdebug debug --controller sts/db --cmd sh               # Debug with sh
-  kdebug backup --pod web-0 --container-path /app/config  # Backup files
-  kdebug backup --pod web-0 --container-path /var/data --local-path ./my-backups/{namespace}/{pod}""",
+  kdebug -n prod                                          # TUI, different namespace
+  kdebug debug --cmd sh --debug-image docker.io/busybox   # TUI, with sh/busybox
+  kdebug backup --pod web-0 --container-path /app/config  # Backup files""",
     )
 
     # Version flag
