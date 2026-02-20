@@ -931,7 +931,7 @@ Usage:
 
     # Version flag
     parser.add_argument(
-        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
+        "-v", "-V", "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
     # Shared arguments (on main parser so bare `kdebug --pod foo` works)

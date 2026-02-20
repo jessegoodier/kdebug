@@ -103,7 +103,7 @@ _kdebug() {
 
     local shared_opts="--pod --controller -n --namespace --context --kubeconfig
                 --container --debug-image --as-root
-                --debug --completions -V --version --help -h"
+                --debug --completions -v -V --version --help -h"
 
     local debug_opts="--cmd --cd-into"
     local backup_opts="--container-path --local-path --compress --tar-exclude"

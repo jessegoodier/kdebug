@@ -71,7 +71,7 @@ _kdebug_controllers() {
 _kdebug() {
     local -a shared_args
     shared_args=(
-        '(-V --version)'{-V,--version}'[Show version and exit]'
+        '(-v -V --version)'{-v,-V,--version}'[Show version and exit]'
         '(-h --help)'{-h,--help}'[Show help message]'
         '--pod[Pod name for direct selection]:pod:_kdebug_pods'
         '--controller[Controller as TYPE/NAME]:controller:_kdebug_controllers'
