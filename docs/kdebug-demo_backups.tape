@@ -3,8 +3,10 @@
 Output docs/kdebug-demo_backups.gif
 
 Set Shell zsh
-Set Width 1600
-Set Height 1200
+Set Width 1200
+Set Height 1600
+Set FontFamily "Fira Mono"
+Set Theme "iTerm2 Dark Background"
 Set WindowBar Colorful
 Hide
 Type "autoload -U colors && colors && clear"
@@ -32,9 +34,17 @@ Enter
 Sleep 3s
 
 # run the backup command for the kubecost-local-store deployment, which will copy files from the container to the local backup directory
-Type "kdebug backup --container-path /var/configs --pod kubecost-aggregator-0 \"
+Type "kdebug backup \"
 Enter
-Type "  --compress --tar-exclude waterfowl --tar-exclude values"
+Type "  --container-path /var/configs \"
+Enter
+Type "  --pod kubecost-aggregator-0 \"
+Enter
+Type "  --compress \"
+Enter
+Type "  --tar-exclude waterfowl \"
+Enter
+Type "  --tar-exclude values"
 Enter
 Sleep 12s
 
