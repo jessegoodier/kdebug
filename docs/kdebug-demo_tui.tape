@@ -1,14 +1,14 @@
 # kdebug demo interactive debug container — VHS Tape
 
-Output vhs/kdebug-demo_tui.gif
+Output docs/kdebug-demo_tui.gif
 
 Set Shell zsh
 Set Width 1200
 Set Height 1000
+Set FontFamily "Fira Mono"
+Set Theme "iTerm2 Dark Background"
 Set WindowBar Colorful
-# Set MarginFill "#0a1667"
-# Set Margin 20
-Set BorderRadius 14
+
 Hide
 Type "autoload -U colors && colors && clear"
 Enter
@@ -24,7 +24,7 @@ Show
 
 Ctrl+L
 Sleep 500ms
-Type "kdebug --cd-into /var/configs"
+Type "uv run kdebug --cd-into /var/configs"
 Enter
 Sleep 1s
 
@@ -46,5 +46,5 @@ Sleep 4s
 Type "du -h -d1"
 Enter
 Sleep 4s
-Screenshot vhs/kdebug-demo_tui.png
+Screenshot docs/kdebug-demo_tui.png
 Sleep .1s
