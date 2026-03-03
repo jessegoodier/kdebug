@@ -178,7 +178,7 @@ def validate_cluster_connection(namespace: str) -> Optional[str]:
 
     Returns None on success, or an error message string on failure.
     """
-    cmd = f"{kubectl_base_cmd()} get pods -n {namespace} --limit=1 -o name"
+    cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o name"
     print_debug_command(cmd)
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:

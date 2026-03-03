@@ -53,7 +53,7 @@ wheels = [
 
 [[package]]
 name = "kdebug"
-version = "0.6.1"
+version = "0.6.3"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
