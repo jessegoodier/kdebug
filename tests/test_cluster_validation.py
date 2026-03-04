@@ -157,14 +157,14 @@ class TestSelectPodValidation:
         result = cli.select_pod(args)
         assert result is not None
 
+    @patch("kdebug.cli.get_pod_by_name", return_value=None)
     @patch("kdebug.cli.validate_cluster_connection")
     @patch("kdebug.cli.get_current_namespace", return_value="default")
-    def test_does_not_fetch_pods_on_validation_failure(self, mock_ns, mock_validate):
-        mock_validate.return_value = "bad context"
+    def test_skips_validation_when_pod_specified(self, mock_ns, mock_validate, mock_get_pod):
         args = self._make_args(pod="my-pod")
-        with patch("kdebug.cli.get_pod_by_name") as mock_get_pod:
-            cli.select_pod(args)
-            mock_get_pod.assert_not_called()
+        cli.select_pod(args)
+        mock_validate.assert_not_called()
+        mock_get_pod.assert_called_once_with("my-pod", "default")
 
 
 class TestKubectlBaseCmd:
