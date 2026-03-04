@@ -485,15 +485,15 @@ def select_pod(args) -> Optional[Dict]:
     """Select a pod based on provided arguments."""
     namespace = args.namespace or get_current_namespace()
 
+    # Direct pod selection — skip list validation (requires only `get`, not `list`)
+    if args.pod:
+        return get_pod_by_name(args.pod, namespace)
+
     # Validate cluster connection and namespace before proceeding
     error = validate_cluster_connection(namespace)
     if error:
         err_console.print(f"[error]✗ Error:[/] {escape(error)}")
         return None
-
-    # Direct pod selection
-    if args.pod:
-        return get_pod_by_name(args.pod, namespace)
 
     # Controller-based selection
     if args.controller:
