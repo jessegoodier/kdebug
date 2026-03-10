@@ -178,7 +178,7 @@ def validate_cluster_connection(namespace: str) -> Optional[str]:
 
     Returns None on success, or an error message string on failure.
     """
-    cmd = f"{kubectl_base_cmd()} get namespace {namespace} -o name"
+    cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o name"
     print_debug_command(cmd)
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -485,15 +485,15 @@ def select_pod(args) -> Optional[Dict]:
     """Select a pod based on provided arguments."""
     namespace = args.namespace or get_current_namespace()
 
+    # Direct pod selection — skip list validation (requires only `get`, not `list`)
+    if args.pod:
+        return get_pod_by_name(args.pod, namespace)
+
     # Validate cluster connection and namespace before proceeding
     error = validate_cluster_connection(namespace)
     if error:
         err_console.print(f"[error]✗ Error:[/] {escape(error)}")
         return None
-
-    # Direct pod selection
-    if args.pod:
-        return get_pod_by_name(args.pod, namespace)
 
     # Controller-based selection
     if args.controller:
