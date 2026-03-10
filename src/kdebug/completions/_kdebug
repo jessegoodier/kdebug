@@ -81,7 +81,7 @@ _kdebug() {
         '--container[Target container for process namespace sharing]:container:'
         '--debug-image[Debug container image]:image:'
         '--as-root[Run debug container as root]'
-        '--debug[Show kubectl commands being executed]'
+        '--verbose[Show kubectl commands being executed]'
         '--completions[Output shell completion script]:shell:(bash zsh fish)'
     )
 

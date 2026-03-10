@@ -112,10 +112,12 @@ complete -c kdebug -l container -d 'Target container for process namespace shari
 complete -c kdebug -l debug-image -d 'Debug container image' -x
 complete -c kdebug -l cmd -d 'Command to run in debug container' -x
 complete -c kdebug -l cd-into -d 'Change to directory on start' -rF
-complete -c kdebug -l backup -d 'Copy path from pod to local backups' -x
+complete -c kdebug -l container-path -d 'Path inside the container to back up' -x
+complete -c kdebug -l local-path -d 'Local destination (supports {namespace},{pod},{date},{container})' -x
 complete -c kdebug -l compress -d 'Compress backup as tar.gz'
+complete -c kdebug -l tar-exclude -d 'Exclude path from compressed backup (repeatable)' -x
 complete -c kdebug -l as-root -d 'Run debug container as root'
-complete -c kdebug -l debug -d 'Show kubectl commands being executed'
+complete -c kdebug -l verbose -d 'Show kubectl commands being executed'
 complete -c kdebug -l completions -d 'Output shell completion script' -xa 'bash zsh fish'
-complete -c kdebug -s V -l version -d 'Show version and exit'
+complete -c kdebug -s v -l version -d 'Show version and exit'
 complete -c kdebug -s h -l help -d 'Show help message'
