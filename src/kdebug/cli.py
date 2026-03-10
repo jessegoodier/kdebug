@@ -962,7 +962,7 @@ Usage:
     options_group.add_argument(
         "--container",
         metavar="NAME",
-        help="Target container for process namespace sharing",
+        help="Target container name (for process namespace sharing)",
     )
     options_group.add_argument(
         "--debug-image",
@@ -982,7 +982,7 @@ Usage:
         "--completions",
         choices=["bash", "zsh", "fish"],
         metavar="SHELL",
-        help="Output shell completion script",
+        help="Output shell completion script (bash, zsh, fish)",
     )
 
     # Debug-specific args also registered on the main parser so that naked usage
@@ -1026,7 +1026,7 @@ Usage:
     _shared_opts.add_argument(
         "--container",
         metavar="NAME",
-        help="Target container for process namespace sharing",
+        help="Target container name (for process namespace sharing)",
     )
     _shared_opts.add_argument(
         "--debug-image",
@@ -1059,7 +1059,9 @@ Usage:
         metavar="DIR",
         help="Change to directory on start (via /proc/1/root)",
     )
-    debug_parser.add_argument("--verbose", action="store_true", help=argparse.SUPPRESS)
+    debug_parser.add_argument(
+        "--verbose", action="store_true", help="Show kubectl commands being executed"
+    )
 
     # backup subcommand
     backup_parser = subparsers.add_parser(
@@ -1095,7 +1097,9 @@ Usage:
         help="Exclude a path when using --compress; may be repeated. "
         "/proc/1/root is prepended automatically.",
     )
-    backup_parser.add_argument("--verbose", action="store_true", help=argparse.SUPPRESS)
+    backup_parser.add_argument(
+        "--verbose", action="store_true", help="Show kubectl commands being executed"
+    )
 
     args = parser.parse_args()
 
