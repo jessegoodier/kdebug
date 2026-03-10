@@ -159,7 +159,7 @@ def create_backup(
             )
 
         _cli.console.print("[warning]Creating tar.gz archive...[/]")
-        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz /proc/1/root/{container_path_rel} {exclude_str}"
+        backup_cmd = f"tar czf /tmp/kdebug-backup.tar.gz{exclude_str} /proc/1/root/{container_path_rel}"
 
         cmd = (
             f"{_cli.kubectl_base_cmd()} exec {pod_name} "
