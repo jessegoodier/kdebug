@@ -2,9 +2,38 @@
 
 Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
 
+When you need tools that are not installed in a container you need to debug or backup- `kdebug` simplifies the long commands you'd otherwise need.
+
+For example, to run a debug container to look at the Grafana filesystem, you'd need to know all of these details:
+
+```sh
+kubectl debug kube-prometheus-stack-grafana-d4f497446-kbqc8 \
+  -n monitoring
+  -it \
+  --target=grafana \
+  --share-processes \
+  --profile=general \
+  --image=busybox \
+  -- /bin/sh
+```
+
+And then, to get to the containers file system, you'd need to run `cd /proc/1/root/etc/grafana`.
+
+Instead:
+
+```sh
+kdebug -n monitoring --cd-into /etc/grafana
+```
+
+tldr; install:
+
+```sh
+brew install jessegoodier/kdebug/kdebug
+```
+
 Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper around `kubectl debug` and `kubectl cp`.
 
->Notice: the default debug container image is <https://github.com/jessegoodier/toolbox/tree/main/common> and may not be ideal for all users. This is configurable both with an arg and a global config file
+>Notice: the default debug container image is <https://github.com/jessegoodier/toolbox/tree/main/common> and may not be ideal for all users. This is configurable both with an arg and a global config file.
 
 ## Features
 
