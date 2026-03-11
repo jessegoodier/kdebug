@@ -26,8 +26,8 @@ just test              # Run tests
 just test-v            # Run tests with verbose output
 just test-v -k cluster # Run specific tests by keyword
 just lint              # Lint with ruff
-just fmt               # Format with ruff
-just fmt-check         # Check formatting without changes
+just format               # Format with ruff
+just format-check         # Check formatting without changes
 just lint-fix          # Auto-fix lint issues
 just build             # Build the package
 just help              # Show CLI help for all subcommands

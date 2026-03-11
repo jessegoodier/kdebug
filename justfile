@@ -18,15 +18,15 @@ lint:
     uv run ruff check src/ tests/
 
 # Format with ruff
-fmt:
+format:
     uv run ruff format src/ tests/
 
 # Check formatting without making changes
-fmt-check:
+format-check:
     uv run ruff format --check src/ tests/
 
 # Run all checks (lint + format check + tests)
-check: lint fmt-check test
+check: lint format-check test
 
 # Auto-fix lint issues
 lint-fix:

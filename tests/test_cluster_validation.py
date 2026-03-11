@@ -160,7 +160,9 @@ class TestSelectPodValidation:
     @patch("kdebug.cli.get_pod_by_name", return_value=None)
     @patch("kdebug.cli.validate_cluster_connection")
     @patch("kdebug.cli.get_current_namespace", return_value="default")
-    def test_skips_validation_when_pod_specified(self, mock_ns, mock_validate, mock_get_pod):
+    def test_skips_validation_when_pod_specified(
+        self, mock_ns, mock_validate, mock_get_pod
+    ):
         args = self._make_args(pod="my-pod")
         cli.select_pod(args)
         mock_validate.assert_not_called()

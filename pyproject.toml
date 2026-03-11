@@ -37,7 +37,7 @@ include = ["src/kdebug"]
 [dependency-groups]
 dev = [
     "pytest>=7.0",
-    "ruff>=0.4",
+    "ruff>=0.15",
 ]
 
 [tool.pytest.ini_options]

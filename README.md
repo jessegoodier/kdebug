@@ -1,10 +1,39 @@
-# kdebug - Universal Kubernetes Debug and File Copy Container Utility
+# kdebug
 
-Simple utility for launching ephemeral debug containers in Kubernetes pods with interactive shell access, backup capabilities, and a colorful TUI for pod selection.
+`kdebug` is a helper utility for launching ephemeral Kubernetes debug containers and backing up files. It provides interactive shell access, backup workflows, and a TUI for pod selection.
 
-Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper around `kubectl debug` and `kubectl cp`.
+When the target container is missing the tools you need, `kdebug` shortens the `kubectl debug` and `kubectl cp` flow into easy to understand commands.
 
->Notice: the default debug container image is <https://github.com/jessegoodier/toolbox/tree/main/common> and may not be ideal for all users. This is configurable both with an arg and a global config file
+For example, to run a debug container to look at the Grafana filesystem, you'd need to know all of these details:
+
+```sh
+kubectl debug kube-prometheus-stack-grafana-d4f497446-kbqc8 \
+  -n monitoring \
+  -it \
+  --target=grafana \
+  --share-processes \
+  --profile=general \
+  --image=busybox \
+  -- /bin/sh
+```
+
+And then, to get to the container's filesystem, you'd need to run `cd /proc/1/root/etc/grafana`.
+
+Instead:
+
+```sh
+kdebug -n monitoring --cd-into /etc/grafana
+```
+
+tldr; install:
+
+```sh
+brew install jessegoodier/kdebug/kdebug
+```
+
+Similar to [kpf](https://github.com/jessegoodier/kpf), this is a Python wrapper around `kubectl debug` and `kubectl cp`.
+
+> Notice: the default debug image is [ghcr.io/jessegoodier/toolbox-common:latest](https://github.com/jessegoodier/toolbox/tree/main/common). Override it with `--debug-image` or a global config file if that image is not appropriate for your needs.
 
 ## Features
 
@@ -12,9 +41,9 @@ Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper 
 - 💾 **Backup Capabilities** - Copy files/directories from pods with optional compression and configurable local paths
 - 🔍 **Multiple Selection Modes** - Direct pod, controller-based, or interactive TUI
 - 🎯 **Smart Container Selection** - Auto-select containers or choose specific targets
-- 🔐 **Root Access Support** - Run debug containers as root when needed
-- 📦 **Controller Support** - Works with Deployments, StatefulSets, and DaemonSets
+- 📦 **Backup Size Estimates** - Understand how much data you backing up
 - ⚙️ **Config File** - Set defaults for debug image, shell command, and backup paths
+- 🔐 **Command Completion** - Automatically installed with brew, otherwise `--completion zsh/bash/fish`
 
 <details open>
 <summary>Demo of the debug TUI</summary>
@@ -30,50 +59,62 @@ Similar to [kpf](https://github.com/jessegoodier/kpf), this is a python wrapper 
 
 ## Installation
 
+### Homebrew
+
 ```bash
 brew install jessegoodier/kdebug/kdebug
 ```
 
+### Python tools
+
+```
+# uv
+uv tool install kdebug
+
+# pip
+pip install kdebug
+```
+
 ## Usage
 
-kdebug uses subcommands for its two modes of operation:
+`kdebug` has two modes of operation:
 
 ```
 kdebug debug [options]          # Interactive debug session (default)
 kdebug backup [options]         # Backup files from pod
-kdebug [options]                # Same as "kdebug debug" for convenience
+kdebug [options]                # Same as "kdebug debug"
 ```
 
 ### Global Options
 
-These shared options work with both subcommands:
+These shared options work with both `debug` and `backup`:
 
 ```bash
 # Use a specific context
 kdebug --context minikube -n default --pod my-pod
 
 # Use a different kubeconfig file
-kdebug --kubeconfig .kubeconfig -n openclaw
+kdebug --kubeconfig .kubeconfig -n my-app
 
 # Combine both options
-kdebug --kubeconfig /path/to/config --context staging -n myapp --pod api-0
+kdebug --kubeconfig /path/to/config --context staging -n my-app --pod my-pod
 ```
 
 ### Interactive Mode (TUI)
 
-When no pod or controller is specified, kdebug launches an interactive menu system:
+When no pod or controller is specified, `kdebug` launches an interactive menu:
 
 ```bash
 # Interactive mode - select from all resources in current namespace
 kdebug
 
 # Interactive mode with specific namespace
-kdebug -n openclaw
+kdebug -n my-app
 ```
 
 ### Debug Subcommand
 
-The `debug` subcommand (or naked `kdebug`) launches an interactive shell session in an ephemeral debug container.
+The `debug` subcommand, or bare `kdebug`, launches an interactive shell session in an ephemeral debug container.
 
 ```bash
 # Interactive session with direct pod (bare usage = debug)
@@ -98,6 +139,8 @@ kdebug debug -n kubecost --pod aggregator-0 --cd-into /var/configs
 
 ### Controller-Based Selection
 
+Avoid the TUI and launch with direct commands:
+
 ```bash
 # Using StatefulSet (sts)
 kdebug --controller sts/aggregator --container aggregator
@@ -117,6 +160,8 @@ kdebug -n logging --controller ds/fluentd
 ### Backup Subcommand
 
 The `backup` subcommand copies files or directories from a pod to your local machine.
+
+This supports both copying files as is to the client, or optionally use tar+gz to compress the files in container before copying.
 
 ```bash
 # Backup a directory (uncompressed)
@@ -226,16 +271,13 @@ Since busybox doesn't include bash, set `cmd` to `sh`. With this config, simply 
 
 ## Shell Completion
 
-kdebug supports tab completion for bash and zsh with dynamic lookups for namespaces, pods, controller names, and subcommands.
+`kdebug` supports tab completion for bash, zsh, and fish with dynamic lookups for namespaces, pods, controller names, and contexts.
 
 ### Bash
 
 ```bash
 # Add to ~/.bashrc
 source <(kdebug --completions bash)
-
-# Or source the file directly
-source /path/to/kdebug/completions/kdebug.bash
 ```
 
 ### Zsh
@@ -252,6 +294,16 @@ fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit
 ```
 
+### Fish
+
+```fish
+# Load for current shell
+kdebug --completions fish | source
+
+# Or install permanently
+kdebug --completions fish > ~/.config/fish/completions/kdebug.fish
+```
+
 ### Completion Features
 
 - `kdebug <TAB>` - Complete subcommands (`debug`, `backup`)
@@ -260,7 +312,7 @@ autoload -Uz compinit && compinit
 - `kdebug backup --<TAB>` - Complete backup-specific options
 - `kdebug -n <TAB>` - Complete namespace names from cluster
 - `kdebug --pod <TAB>` - Complete pod names (respects -n flag)
-- `kdebug --controller <TAB>` - Complete controller types and names
+- `kdebug --controller <TAB>` - Complete controller type/name pairs
 - `kdebug --context <TAB>` - Complete context names from kubeconfig
 
 ## Examples
@@ -337,6 +389,7 @@ kdebug uses a kubecolor-inspired color scheme:
 ## Requirements
 
 - Python 3.9+
+- `rich` is installed automatically with the Python package
 - kubectl configured with cluster access
 - Kubernetes cluster with ephemeral containers support (v1.23+)
 
@@ -380,6 +433,4 @@ MIT
 
 Contributions welcome! Please open issues or pull requests.
 
----
-
-Made with ❤️ and Bob
+See [README-development.md](README-development.md) for local setup, linting, tests, and helper `just` commands.
