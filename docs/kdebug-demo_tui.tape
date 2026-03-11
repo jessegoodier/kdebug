@@ -24,7 +24,7 @@ Show
 
 Ctrl+L
 Sleep 500ms
-Type "uv run kdebug --cd-into /var/configs"
+Type "kdebug --cd-into /var/configs"
 Enter
 Sleep 1s
 
