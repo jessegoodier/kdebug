@@ -150,7 +150,7 @@ def create_backup(
         # Show source size (with excludes applied) before running tar
         du_result = _cli.run_command(
             f"{_cli.kubectl_base_cmd()} exec {pod_name} -n {namespace} -c {container_name} "
-            f"-- /bin/sh -c 'du -sh{exclude_str} /proc/1/root/{container_path_rel}'",
+            f"-- sh -c 'du -sh{exclude_str} /proc/1/root/{container_path_rel}'",
             check=False,
         )
         if du_result:
