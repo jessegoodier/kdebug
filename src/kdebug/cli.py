@@ -852,7 +852,7 @@ def cleanup_debug_container(
         f"{kubectl_base_cmd()} exec {pod_name} "
         f"-n {namespace} "
         f"-c {debug_container} "
-        f"-- /bin/bash -c 'kill -9 1' 2>/dev/null || true"
+        f"-- sh -c 'kill -9 1' 2>/dev/null || true"
     )
 
     run_command(cmd, check=False)
