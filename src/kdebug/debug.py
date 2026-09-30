@@ -37,7 +37,7 @@ def exec_interactive(
 
     # If cd_into is specified, wrap command to cd first
     if cd_into:
-        if cmd == "bash":
+        if cmd == "sh":
             cmd = f"bash -c 'cd /proc/1/root{cd_into} && exec bash'"
         elif cmd == "sh":
             cmd = f"sh -c 'cd /proc/1/root{cd_into} && exec sh'"

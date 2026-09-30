@@ -103,7 +103,7 @@ def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optiona
         if use_bash:
             # Use bash explicitly for commands that need bash features like process substitution
             result = subprocess.run(
-                ["bash", "-c", cmd], capture_output=True, text=True, check=check
+                ["sh", "-c", cmd], capture_output=True, text=True, check=check
             )
         else:
             # Run as a direct exec (no shell) so kubectl works in environments
@@ -133,7 +133,7 @@ _CONFIG_KEYS = {"debugImage", "cmd", "cdInto", "backupContainerPath", "backupLoc
 
 _HARDCODED_DEFAULTS = {
     "debugImage": "ghcr.io/jessegoodier/toolbox-common:latest",
-    "cmd": "bash",
+    "cmd": "sh",
 }
 
 
@@ -863,7 +863,7 @@ def cleanup_debug_container(
 
 def _output_completion_script(shell: str) -> None:
     """Output the shell completion script and exit."""
-    files = {"bash": "kdebug.bash", "zsh": "_kdebug", "fish": "kdebug.fish"}
+    files = {"sh": "kdebug.sh", "zsh": "_kdebug", "fish": "kdebug.fish"}
     filename = files.get(shell)
     if not filename:
         err_console.print(f"[error]Unknown shell:[/] {escape(shell)}")
@@ -983,7 +983,7 @@ Usage:
     )
     util_group.add_argument(
         "--completions",
-        choices=["bash", "zsh", "fish"],
+        choices=["sh", "zsh", "fish"],
         metavar="SHELL",
         help="Output shell completion script (bash, zsh, fish)",
     )
