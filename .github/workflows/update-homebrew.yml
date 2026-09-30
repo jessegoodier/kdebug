@@ -7,16 +7,37 @@ on:
         description: 'Version tag (e.g., v1.0.0)'
         required: false
         type: string
+  # Fires for standalone Publish to PyPI runs (release published by a user,
+  # or workflow_dispatch). The release workflow calls this file directly
+  # after its publish job; that call does not emit workflow_run.
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
 
 jobs:
   update-homebrew-tap:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Check out published commit
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
       - name: Get version
         id: release-info
         run: |
-          VERSION="${{ inputs.version }}"
-          VERSION="${VERSION#v}"  # Strip 'v' prefix
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
+          else
+            VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"  # Strip 'v' prefix
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "Could not determine the published version"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
 

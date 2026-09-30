@@ -106,7 +106,7 @@ def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optiona
             )
         else:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, check=check
+                ["sh", "-c", cmd], capture_output=True, text=True, check=check
             )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -180,7 +180,7 @@ def validate_cluster_connection(namespace: str) -> Optional[str]:
     """
     cmd = f"{kubectl_base_cmd()} get pods -n {namespace} -o name"
     print_debug_command(cmd)
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True)
     if result.returncode != 0:
         return result.stderr.strip()
     return None
