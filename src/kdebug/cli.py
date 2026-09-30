@@ -21,6 +21,7 @@ import importlib.resources
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import termios
@@ -105,8 +106,10 @@ def run_command(cmd: str, check: bool = True, use_bash: bool = False) -> Optiona
                 ["bash", "-c", cmd], capture_output=True, text=True, check=check
             )
         else:
+            # Run as a direct exec (no shell) so kubectl works in environments
+            # where /bin/sh is absent (distroless / minimal container images).
             result = subprocess.run(
-                ["sh", "-c", cmd], capture_output=True, text=True, check=check
+                shlex.split(cmd), capture_output=True, text=True, check=check
             )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
