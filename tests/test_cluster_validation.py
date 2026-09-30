@@ -83,7 +83,8 @@ class TestValidateClusterConnection:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         cli.validate_cluster_connection("default")
         cmd = mock_run.call_args[0][0]
-        assert "--context=my-context" in cmd
+        assert cmd[:2] == ["sh", "-c"]
+        assert "--context=my-context" in cmd[2]
 
     @patch("kdebug.cli.subprocess.run")
     def test_uses_kubeconfig_flag(self, mock_run):
@@ -91,14 +92,16 @@ class TestValidateClusterConnection:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         cli.validate_cluster_connection("default")
         cmd = mock_run.call_args[0][0]
-        assert "--kubeconfig=/my/kubeconfig" in cmd
+        assert cmd[:2] == ["sh", "-c"]
+        assert "--kubeconfig=/my/kubeconfig" in cmd[2]
 
     @patch("kdebug.cli.subprocess.run")
     def test_includes_namespace_in_command(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         cli.validate_cluster_connection("kube-system")
         cmd = mock_run.call_args[0][0]
-        assert "kube-system" in cmd
+        assert cmd[:2] == ["sh", "-c"]
+        assert "kube-system" in cmd[2]
 
     @patch("kdebug.cli.subprocess.run")
     def test_strips_stderr_whitespace(self, mock_run):
