@@ -90,7 +90,7 @@ jobs:
             --latest
 
   update-homebrew:
-    needs: release
+    needs: [release, publish-pypi]
     uses: ./.github/workflows/update-homebrew.yml
     with:
       version: v${{ needs.release.outputs.version }}
