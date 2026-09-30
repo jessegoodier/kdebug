@@ -165,7 +165,7 @@ def create_backup(
             f"{_cli.kubectl_base_cmd()} exec {pod_name} "
             f"-n {namespace} "
             f"-c {container_name} "
-            f"-- /bin/bash -c '{backup_cmd}'"
+            f"-- sh -c '{backup_cmd}'"
         )
 
         result = _cli.run_command(cmd, check=True)
