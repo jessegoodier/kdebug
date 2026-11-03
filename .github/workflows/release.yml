@@ -13,6 +13,10 @@ on:
           - minor
           - major
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -20,72 +24,54 @@ permissions:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.new.outputs.version }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          ref: main
 
-      - name: Configure Git
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "latest"
+
+      - name: Bump version and push release branch
+        id: new
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
         run: |
+          VERSION=$(uv version --bump "$RELEASE_TYPE" --no-sync --short)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          git switch -c "release/v$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock
+          git commit -m "Release v$VERSION"
+          git push origin HEAD
 
-      - name: Get current version
-        id: current
-        run: |
-          VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Calculate new version
-        id: new
-        run: |
-          IFS='.' read -r major minor patch <<< "${{ steps.current.outputs.version }}"
-          case "${{ inputs.release_type }}" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-          echo "version=${major}.${minor}.${patch}" >> $GITHUB_OUTPUT
-
-      - name: Update version in pyproject.toml
-        run: |
-          sed -i 's/^version = "[^"]*"/version = "${{ steps.new.outputs.version }}"/' pyproject.toml
-
-      - name: Create release branch and push
-        run: |
-          BRANCH="release/v${{ steps.new.outputs.version }}"
-          git checkout -b "$BRANCH"
-          git add pyproject.toml
-          git commit -m "Release v${{ steps.new.outputs.version }}"
-          git push origin "$BRANCH"
-
-      - name: Create and merge PR
+      - name: Merge version bump and create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.new.outputs.version }}
         run: |
-          VERSION="v${{ steps.new.outputs.version }}"
-          BRANCH="release/$VERSION"
-          gh pr create \
+          PR_URL=$(gh pr create \
             --base main \
-            --head "$BRANCH" \
-            --title "Release $VERSION" \
-            --body "Automated release $VERSION"
-          gh pr merge "$BRANCH" --squash --delete-branch
-
-      - name: Tag release and push
-        run: |
-          git fetch origin main
-          git tag "v${{ steps.new.outputs.version }}" origin/main
-          git push origin "v${{ steps.new.outputs.version }}"
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${{ steps.new.outputs.version }}" \
+            --head "release/v$VERSION" \
+            --title "Release v$VERSION" \
+            --body "Automated release v$VERSION")
+          gh pr merge "$PR_URL" --squash --delete-branch
+          # A merge queue may accept the PR without merging it yet.
+          COMMIT=$(gh pr view "$PR_URL" --json state,mergeCommit \
+            --jq 'select(.state == "MERGED") | .mergeCommit.oid')
+          if [ -z "$COMMIT" ]; then
+            echo "::error::Release PR has not merged; refusing to publish."
+            exit 1
+          fi
+          gh release create "v$VERSION" \
+            --target "$COMMIT" \
             --generate-notes \
             --latest
 
