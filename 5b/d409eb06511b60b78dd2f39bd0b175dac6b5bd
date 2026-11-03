@@ -1,0 +1,19 @@
+.github/workflows/update-homebrew.yml
+  s_aad041bd470897::t_e47b367349fd0b 41,57-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bd409eb06511b60b78dd2f39bd0b175dac6b5bd",
+  "prompts": {},
+  "sessions": {
+    "s_aad041bd470897": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a2b4-81ef-7f93-8b4d-560333056832",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jesse goodier <31039225+jessegoodier@users.noreply.github.com>"
+    }
+  }
+}
