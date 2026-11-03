@@ -38,7 +38,7 @@ jobs:
             echo "Could not determine the published version"
             exit 1
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
 
       - name: Trigger Homebrew tap update
@@ -54,5 +54,5 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Homebrew tap update triggered for kdebug ${{ steps.release-info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "The [homebrew-kdebug](https://github.com/jessegoodier/homebrew-kdebug) update-formula workflow has been dispatched." >> $GITHUB_STEP_SUMMARY
+          echo "### Homebrew tap update triggered for kdebug ${{ steps.release-info.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "The [homebrew-kdebug](https://github.com/jessegoodier/homebrew-kdebug) update-formula workflow has been dispatched." >> "$GITHUB_STEP_SUMMARY"
