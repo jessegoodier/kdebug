@@ -863,7 +863,7 @@ def cleanup_debug_container(
 
 def _output_completion_script(shell: str) -> None:
     """Output the shell completion script and exit."""
-    files = {"sh": "kdebug.sh", "zsh": "_kdebug", "fish": "kdebug.fish"}
+    files = {"bash": "kdebug.bash", "zsh": "_kdebug", "fish": "kdebug.fish"}
     filename = files.get(shell)
     if not filename:
         err_console.print(f"[error]Unknown shell:[/] {escape(shell)}")
@@ -983,7 +983,7 @@ Usage:
     )
     util_group.add_argument(
         "--completions",
-        choices=["sh", "zsh", "fish"],
+        choices=["bash", "zsh", "fish"],
         metavar="SHELL",
         help="Output shell completion script (bash, zsh, fish)",
     )
