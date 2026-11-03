@@ -1,5 +1,17 @@
-# kdebug development tasks
-# Run `just` to see available recipes
+# Task Runner
+# https://github.com/casey/just
+
+# Enforce bash/zsh strict mode
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# consistency across all platforms and development environments
+unexport VIRTUAL_ENV
+export UV_FROZEN := "1"
+export UV_PYTHON_PREFERENCE := "only-managed"
+
+# Show available tasks
+default:
+    @just --list
 
 # Install dependencies and project in dev mode
 setup:
