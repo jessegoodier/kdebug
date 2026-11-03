@@ -1,0 +1,45 @@
+.python-version
+  h_cca6aa2712613d 1
+.github/workflows/release.yml
+  s_aad041bd470897::t_ae360bab0a99e0 16-19,27,32,34,41,44,46,48-53,55,58,60-74
+  s_cd5db6e528d59c::t_94cadbbb1b84d5 36-39,47
+justfile
+  h_cca6aa2712613d 1-14
+.github/workflows/pypi-publish.yml
+  h_cca6aa2712613d 27,32
+.github/workflows/test.yml
+  h_cca6aa2712613d 13,16
+.github/workflows/update-homebrew.yml
+  h_cca6aa2712613d 24
+.pre-commit-config.yaml
+  h_cca6aa2712613d 13,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0df6cc6813449bd6b1813208766317ca15d7c096",
+  "prompts": {},
+  "humans": {
+    "h_cca6aa2712613d": {
+      "author": "jesse goodier <31039225+jessegoodier@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_aad041bd470897": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a2b4-81ef-7f93-8b4d-560333056832",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jesse goodier <31039225+jessegoodier@users.noreply.github.com>"
+    },
+    "s_cd5db6e528d59c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f6e10bed-316f-435d-81cd-73d1bc441b6d",
+        "model": "default"
+      },
+      "human_author": "jesse goodier <31039225+jessegoodier@users.noreply.github.com>"
+    }
+  }
+}
